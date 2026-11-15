@@ -32,6 +32,18 @@ HOST=0.0.0.0 PORT=3000 npm start
 
 `npm start` 同时提供 `dist` 静态页面与 `/api/books` 接口。使用 Nginx 时，可将全部请求反向代理到这个服务。此版本需要 Node.js 后端，仅部署 `dist` 静态文件无法导入、读取或导出书籍。`npm run preview` 也支持书籍接口，供本地预览。
 
+不想装依赖时，可只把 `dist`、`server`、`server.mjs` 三个文件（目录）拷到目标机器，直接 `node server.mjs`：运行时只用 Node 内置模块，不需要 `node_modules` 或 `package.json`。
+
+也可以直接从 Git 仓库运行，`prepare` 脚本会在安装时自动构建 `dist`：
+
+```sh
+npx --yes git+https://gitee.com/MangaQQQ/bqread.git
+# 或 GitHub 简写
+npx --yes github:<用户名>/<仓库>
+```
+
+这种方式需要目标机器有 git、Node 20.19+，首次会安装构建依赖并编译，比拷贝 `dist` 慢。
+
 ## 功能与存储
 
 - TXT 文件选择、拖放导入，或直接粘贴小说文本

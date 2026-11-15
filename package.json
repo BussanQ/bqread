@@ -2,12 +2,30 @@
   "name": "modu-reader",
   "version": "1.0.0",
   "private": true,
+  "description": "墨读：把 TXT 小说存到服务端的私人阅读器，支持分章、导出与阅读进度保存",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://gitee.com/MangaQQQ/bqread.git"
+  },
   "type": "module",
+  "bin": {
+    "bqread": "./server.mjs"
+  },
+  "files": [
+    "dist",
+    "server",
+    "server.mjs"
+  ],
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "start": "node server.mjs",
+    "prepare": "npm run build",
     "test": "tsc --noEmit && vite build --config vite.test.config.ts && node --test tests/*.test.mjs"
   },
   "devDependencies": {
