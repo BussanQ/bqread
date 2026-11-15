@@ -1,0 +1,212 @@
+import { test, expect } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
+
+test.beforeEach(async ({ request }) => {
+  const response = await request.get('/api/books');
+  expect(response.ok()).toBe(true);
+  for (const book of await response.json()) {
+    expect((await request.delete(`/api/books/${book.id}`)).ok()).toBe(true);
+  }
+});
+
+test('imports, reads, saves progress, and deletes a TXT novel', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.goto('/');
+  await expect(page.locator('.book-item')).toHaveCount(3);
+
+  await page.locator('#book-search').fill('不存在的书名');
+  await expect(page.getByText('没有找到这本书')).toBeVisible();
+  await page.locator('#book-search').fill('岛屿');
+  await expect(page.locator('.book-item')).toHaveCount(1);
+  await page.locator('#book-search').fill('');
+
+  await page.getByRole('button', { name: /导入小说/ }).click();
+  await page.locator('#novel-file').setInputFiles('tests/fixture-novel.txt');
+  await page.locator('#import-title').fill('山间时光');
+  await page.locator('#import-author').fill('许知微');
+  await page.getByRole('button', { name: '加入书架' }).click();
+  await expect(page.locator('.book-item')).toHaveCount(4);
+  await page.getByRole('button', { name: '阅读《山间时光》' }).click();
+  await expect(page.locator('.reading-chapter-title')).toHaveText('第一章 山间清晨');
+  await page.getByRole('button', { name: '章节目录', exact: true }).click();
+  await expect(page.locator('.chapter-link')).toHaveCount(3);
+  await page.locator('.chapter-link').nth(1).click();
+  await expect(page.locator('.reading-chapter-title')).toHaveText('第二章 溪边午后');
+
+  await page.getByRole('button', { name: '阅读设置', exact: true }).click();
+  await page.getByRole('button', { name: '静谧夜', exact: true }).click();
+  await expect(page.locator('.reader-shell')).toHaveAttribute('data-theme', 'night');
+  await page.getByRole('button', { name: '增大字号' }).click();
+  await expect(page.locator('.reading-content')).toHaveAttribute('data-font', '20');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('ArrowRight');
+  await expect(page.locator('.reading-chapter-title')).toHaveText('第三章 灯下夜读');
+  await page.waitForTimeout(650);
+  await page.reload();
+  await expect(page.locator('.book-item')).toHaveCount(4);
+  await page.getByRole('button', { name: '阅读《山间时光》' }).click();
+  await expect(page.locator('.reading-chapter-title')).toHaveText('第三章 灯下夜读');
+  await expect(page.locator('.reader-shell')).toHaveAttribute('data-theme', 'night');
+  await expect(page.locator('.reading-content')).toHaveAttribute('data-font', '20');
+  await expect(page.locator('#reader-percent')).toHaveText(/\d{2}% 已读/);
+
+  await page.getByRole('button', { name: '返回书架', exact: true }).click();
+  await page.getByRole('button', { name: /正在阅读/ }).click();
+  await expect(page.locator('.book-item')).toHaveCount(1);
+  await page.getByRole('button', { name: /全部书籍/ }).click();
+  await page.getByRole('button', { name: '从书架移除《山间时光》' }).click();
+  await page.getByRole('button', { name: '确认移除' }).click();
+  await expect(page.locator('.book-item')).toHaveCount(3);
+  await page.reload();
+  await expect(page.locator('.book-item')).toHaveCount(3);
+  expect(errors).toEqual([]);
+});
+
+test('accepts pasted novels and fits a 390px screen', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('.book-item')).toHaveCount(3);
+  await page.getByRole('button', { name: /导入小说/ }).click();
+  await page.getByRole('tab', { name: '粘贴文本' }).click();
+  await page.locator('#import-title').fill('粘贴的故事');
+  await page.locator('#paste-text').fill('第一章 开始\n这是一个通过粘贴文本创建的故事。\n第二章 继续\n故事还有下一章。');
+  await page.getByRole('button', { name: '加入书架' }).click();
+  await expect(page.locator('.book-item')).toHaveCount(4);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole('button', { name: '阅读《粘贴的故事》' }).click();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole('button', { name: '章节目录', exact: true }).click();
+  await page.locator('.chapter-link').nth(1).click();
+  await expect(page.locator('.reading-chapter-title')).toHaveText('第二章 继续');
+});
+
+test('supports drag and drop, GB18030, and import errors', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('.book-item')).toHaveCount(3);
+  await page.getByRole('button', { name: /导入小说/ }).click();
+  await page.getByRole('button', { name: '加入书架' }).click();
+  await expect(page.getByRole('alert')).toHaveText('请先选择一个 TXT 文件。');
+  await page.locator('#novel-file').setInputFiles({ name: 'story.pdf', mimeType: 'application/pdf', buffer: Buffer.from('not a novel') });
+  await expect(page.getByRole('alert')).toHaveText('暂不支持这个格式，请选择 TXT 文本文件。');
+  const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
+  await dataTransfer.evaluate((transfer) => {
+    transfer.items.add(new File(['第一章 拖放\n这是拖进阅读器的小说。'], '拖放故事.txt', { type: 'text/plain' }));
+  });
+  await page.locator('#drop-zone').dispatchEvent('drop', { dataTransfer });
+  await expect(page.locator('#import-title')).toHaveValue('拖放故事');
+  await page.getByRole('button', { name: '加入书架' }).click();
+  await expect(page.locator('.book-item')).toHaveCount(4);
+  await page.getByRole('button', { name: /导入小说/ }).click();
+  await page.locator('#novel-file').setInputFiles({ name: '老书.txt', mimeType: 'text/plain', buffer: Buffer.from([0xC0, 0xCF, 0xB5, 0xC4, 0xD0, 0xA1, 0xCB, 0xB5, 0xA1, 0xA3]) });
+  await page.locator('#import-title').fill('编码测试');
+  await page.getByRole('button', { name: '加入书架' }).click();
+  await page.getByRole('button', { name: '阅读《编码测试》' }).click();
+  await expect(page.locator('.reading-content')).toContainText('老的小说。');
+  await dataTransfer.dispose();
+});
+
+test('exports server books and retains them in a fresh browser context', async ({ page, browser }) => {
+  await page.goto('/');
+  await expect(page.locator('.book-item')).toHaveCount(3);
+  await page.getByRole('button', { name: /导入小说/ }).click();
+  await page.locator('#novel-file').setInputFiles('tests/fixture-novel.txt');
+  await page.locator('#import-title').fill('服务端书库');
+  await page.locator('#import-author').fill('测试作者');
+  await page.getByRole('button', { name: '加入书架' }).click();
+  await expect(page.locator('.book-item')).toHaveCount(4);
+  const card = page.locator('.book-item').filter({ has: page.getByRole('button', { name: '阅读《服务端书库》' }) });
+  await card.hover();
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: '导出《服务端书库》' }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe('服务端书库 - 测试作者.txt');
+  const downloaded = await readFile((await download.path())!, 'utf8');
+  const source = await readFile('tests/fixture-novel.txt', 'utf8');
+  expect(downloaded.replace(/^\uFEFF/, '').trim()).toBe(source.replace(/\r\n?/g, '\n').trim());
+  expect(await page.evaluate(() => localStorage.getItem('modu-progress'))).toBeNull();
+  expect(await page.evaluate(async () => (await indexedDB.databases()).map((database) => database.name))).not.toContain('modu-reader');
+
+  const freshContext = await browser.newContext();
+  const fresh = await freshContext.newPage();
+  await fresh.goto(page.url());
+  await expect(fresh.getByRole('button', { name: '阅读《服务端书库》' })).toBeVisible();
+  await fresh.setViewportSize({ width: 390, height: 844 });
+  await fresh.getByRole('button', { name: '导出《服务端书库》' }).scrollIntoViewIfNeeded();
+  const exportBox = await fresh.getByRole('button', { name: '导出《服务端书库》' }).boundingBox();
+  const deleteBox = await fresh.getByRole('button', { name: '从书架移除《服务端书库》' }).boundingBox();
+  expect(exportBox!.x + exportBox!.width).toBeLessThanOrEqual(deleteBox!.x);
+  await fresh.getByRole('button', { name: '从书架移除《服务端书库》' }).click();
+  await expect(fresh.getByText(/的正文将从服务端删除/)).toBeVisible();
+  await fresh.getByRole('button', { name: '确认移除' }).click();
+  await expect(fresh.locator('.book-item')).toHaveCount(3);
+  await page.reload();
+  await expect(page.locator('.book-item')).toHaveCount(3);
+  await freshContext.close();
+});
+
+test('migrates legacy IndexedDB books and reading progress', async ({ page, request }) => {
+  await page.goto('/');
+  await expect(page.locator('.book-item')).toHaveCount(3);
+  await page.evaluate(async () => {
+    const content = '第一章 旧书\n旧版导入的书籍。\n第二章 继续\n迁移后仍然可读。';
+    await new Promise<void>((resolve, reject) => {
+      const open = indexedDB.open('modu-reader', 1);
+      open.onupgradeneeded = () => open.result.createObjectStore('books', { keyPath: 'id' });
+      open.onerror = () => reject(open.error);
+      open.onsuccess = () => {
+        const db = open.result;
+        const transaction = db.transaction('books', 'readwrite');
+        transaction.objectStore('books').put({
+          id: 'legacy-book', title: '旧版藏书', author: '原作者', content,
+          chapters: [
+            { title: '第一章 旧书', start: 0, content: '旧版导入的书籍。' },
+            { title: '第二章 继续', start: content.indexOf('第二章'), content: '迁移后仍然可读。' },
+          ],
+          cover: 'forest', addedAt: Date.now(), lastReadAt: Date.now(), location: content.indexOf('第二章'), sample: false,
+        });
+        transaction.oncomplete = () => { db.close(); resolve(); };
+        transaction.onerror = () => reject(transaction.error);
+      };
+    });
+  });
+  await page.route('**/api/books', async (route) => {
+    if (route.request().method() === 'POST') {
+      await route.fulfill({ status: 500, json: { error: '测试迁移失败' } });
+    } else await route.continue();
+  });
+  await page.reload();
+  await expect(page.getByRole('status')).toContainText('测试迁移失败');
+  expect(await page.evaluate(async () => (await indexedDB.databases()).map((database) => database.name))).toContain('modu-reader');
+  await page.unroute('**/api/books');
+  await page.reload();
+  await expect(page.getByRole('button', { name: '阅读《旧版藏书》' })).toBeVisible();
+  const books = await (await request.get('/api/books')).json();
+  expect(books.find((book: { id: string }) => book.id === 'legacy-book')?.content).toContain('旧版导入的书籍。');
+  expect(await page.evaluate(async () => (await indexedDB.databases()).map((database) => database.name))).not.toContain('modu-reader');
+  await page.getByRole('button', { name: '阅读《旧版藏书》' }).click();
+  await expect(page.locator('.reading-chapter-title')).toHaveText('第二章 继续');
+});
+
+test('reports failed saves and exports without reporting success', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('.book-item')).toHaveCount(3);
+  await page.getByRole('button', { name: /导入小说/ }).click();
+  await page.locator('#novel-file').setInputFiles('tests/fixture-novel.txt');
+  await page.locator('#import-title').fill('失败后重试');
+  await page.route('**/api/books', async (route) => {
+    if (route.request().method() === 'POST') await route.fulfill({ status: 500, json: { error: '测试文件写入失败' } });
+    else await route.continue();
+  });
+  await page.getByRole('button', { name: '加入书架' }).click();
+  await expect(page.getByRole('alert')).toHaveText('测试文件写入失败');
+  await expect(page.locator('.book-item')).toHaveCount(3);
+  await page.unroute('**/api/books');
+  await page.getByRole('button', { name: '加入书架' }).click();
+  await expect(page.locator('.book-item')).toHaveCount(4);
+  await page.route('**/api/books/*/export', (route) => route.fulfill({ status: 500, json: { error: '测试导出失败' } }));
+  await page.locator('.book-item').filter({ has: page.getByRole('button', { name: '阅读《失败后重试》' }) }).hover();
+  await page.getByRole('button', { name: '导出《失败后重试》' }).click();
+  await expect(page.getByRole('status')).toHaveText('测试导出失败');
+  await expect(page.getByRole('button', { name: '导出《失败后重试》' })).toBeEnabled();
+});
