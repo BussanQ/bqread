@@ -10,7 +10,7 @@ const context = await browser.newContext({ viewport: { width: 1440, height: 1080
 const page = await context.newPage();
 const errors = [];
 page.on('pageerror', (error) => errors.push(error.message));
-await page.goto('http://127.0.0.1:5173', { waitUntil: 'networkidle' });
+await page.goto('http://127.0.0.1:5174', { waitUntil: 'networkidle' });
 await page.locator('.book-item').first().waitFor();
 assert.equal(await page.locator('.book-item').count(), 3);
 assert.match(await page.title(), /墨读/);

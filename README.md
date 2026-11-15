@@ -24,7 +24,7 @@ npm run build
 npm start
 ```
 
-默认地址为 `http://127.0.0.1:4173`，可通过 `HOST` 和 `PORT` 修改：
+默认地址为 `http://127.0.0.1:5174`，可通过 `HOST` 和 `PORT` 修改：
 
 ```sh
 HOST=0.0.0.0 PORT=3000 npm start
