@@ -1,3 +1,5 @@
+import { createBookHistory } from './book-history.mjs';
+import { createBookChat } from './book-chat.mjs';
 import { mkdir } from 'node:fs/promises';
 import { createBookStore } from './book-store.mjs';
 import { homedir } from 'node:os';
@@ -11,15 +13,15 @@ function json(response, status, value) {
   response.end(JSON.stringify(value));
 }
 
-async function requestBody(request) {
+async function requestBody(request, limit = MAX_BODY_SIZE) {
   return new Promise((resolveBody, reject) => {
     let size = 0;
     let body = '';
     request.setEncoding('utf8');
     request.on('data', (chunk) => {
       size += Buffer.byteLength(chunk);
-      if (size > MAX_BODY_SIZE) {
-        reject(Object.assign(new Error('书籍数据过大，请选择不超过 10 MB 的 TXT 文件。'), { status: 413 }));
+      if (size > limit) {
+        reject(Object.assign(new Error(limit === MAX_BODY_SIZE ? '书籍数据过大，请选择不超过 10 MB 的 TXT 文件。' : '问题过长。'), { status: 413 }));
         return;
       }
       body += chunk;
@@ -49,9 +51,14 @@ function validateBook(value) {
   };
 }
 
+export function resolveBookDirectory(configured = process.env.BQREAD_DATA_DIR) {
+  return resolve(configured || join(homedir(), '.bqread', 'books'));
+}
+
 export function createApiHandler(options = {}) {
-  const directory = options.directory ?? (process.env.BQREAD_DATA_DIR ? resolve(process.env.BQREAD_DATA_DIR) : join(homedir(), '.bqread', 'books'));
+  const directory = resolveBookDirectory(options.directory);
   const store = createBookStore(directory);
+  const history = createBookHistory(directory, createBookChat(store, directory, options.agent));
   return async function apiHandler(request, response, next) {
     const url = new URL(request.url ?? '/', 'http://localhost');
     if (!url.pathname.startsWith('/api/books')) {
@@ -61,18 +68,27 @@ export function createApiHandler(options = {}) {
 
     try {
       await mkdir(directory, { recursive: true, mode: 0o700 });
-      const match = url.pathname.match(/^\/api\/books(?:\/([^/]+)(?:\/(export|toc|chapters))?)?$/);
+      const match = url.pathname.match(/^\/api\/books(?:\/([^/]+)(?:\/(export|toc|chapters|chat))?)?$/);
       if (!match) return json(response, 404, { error: '接口不存在。' });
       const id = match[1] ? decodeURIComponent(match[1]) : null;
       const action = match[2];
 
+      if (id && action === 'chat' && request.method === 'GET') {
+        return json(response, 200, await history.list(id, url.searchParams.get('sample') === 'true'));
+      }
+      if (id && action === 'chat' && request.method === 'POST') {
+        const input = JSON.parse(await requestBody(request, 16384));
+        const reply = await history.ask(id, input);
+        if (!response.destroyed) return json(response, 200, reply);
+        return;
+      }
       if (!id && request.method === 'GET') return json(response, 200, await store.list());
       if (!id && request.method === 'POST') {
         const book = validateBook(JSON.parse(await requestBody(request)));
         return json(response, 201, await store.save(book));
       }
       if (id && !action && request.method === 'DELETE') {
-        await store.remove(id);
+        await history.removeBook(id, store.remove);
         response.writeHead(204, { 'Cache-Control': 'no-store' });
         return response.end();
       }

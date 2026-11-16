@@ -1,3 +1,5 @@
+import { BookChatPanel } from './book-chat';
+import { escapeHTML } from './html';
 import './style.css';
 import { icon, logo } from './icons';
 import { chapterAt, createBook, decodeTextFile, titleFromFilename } from './parser';
@@ -18,6 +20,7 @@ let pendingChapter: number | null = null;
 let search = '';
 let filter: ShelfFilter = 'all';
 let reader: ReaderState | null = null;
+let chat: BookChatPanel | null = null;
 let modal: ModalName = null;
 let importTab: 'file' | 'paste' = 'file';
 let importFile: File | null = null;
@@ -48,9 +51,6 @@ function loadSettings(): ReadingSettings {
 }
 let settings = loadSettings();
 
-function escapeHTML(value: string): string {
-  return value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!);
-}
 
 function coverArt(book: BookSummary): string {
   const theme = book.cover;
@@ -160,9 +160,10 @@ function readingView(book: BookSummary): string {
   const chapter = reader!.chapters[reader!.chapterIndex]!;
   const text = reader!.window.texts[reader!.chapterIndex - reader!.window.start]!;
   const paragraphs = text.split(/\n+/).filter((paragraph) => paragraph.trim()).map((paragraph) => `<p>${escapeHTML(paragraph.trim())}</p>`).join('');
-  return `<div class="reader-shell" data-theme="${settings.theme}"><header class="reader-header"><div class="reader-brand"><button class="icon-button back-button" data-action="home" aria-label="返回书架" title="返回书架">${icon('left')}</button><span class="reader-book-title title-3">${escapeHTML(book.title)}</span></div><div class="reader-header-actions"><span class="reader-local caption-5">${icon('check')}进度已自动保存</span><nav class="header-chapter-navigation" aria-label="章节导航"><button class="chapter-button button-sm" data-action="previous" ${reader!.chapterIndex === 0 ? 'disabled' : ''}>${icon('left')}上一章</button><button class="chapter-button button-sm" data-action="next" ${reader!.chapterIndex === book.chapterCount - 1 ? 'disabled' : ''}>下一章${icon('right')}</button></nav><button class="icon-button ${reader!.drawer === 'contents' ? 'active' : ''}" data-action="contents" aria-label="章节目录" aria-expanded="${reader!.drawer === 'contents'}" title="章节目录">${icon('list')}</button><button class="icon-button ${reader!.drawer === 'settings' ? 'active' : ''}" data-action="settings" aria-label="阅读设置" aria-expanded="${reader!.drawer === 'settings'}" title="阅读设置">${icon('settings')}</button></div></header>
-    <main class="reading-main" id="main-content"><p class="reading-eyebrow caption-5">${escapeHTML(book.title)} · ${escapeHTML(book.author)}</p><h1 class="reading-chapter-title">${escapeHTML(chapter.title)}</h1><article class="reading-content" data-font="${settings.fontSize}" aria-label="${escapeHTML(chapter.title)}正文">${paragraphs || '<p>本章没有正文。</p>'}</article><div class="reading-end caption-5"><span class="end-ornament">${reader!.chapterIndex === book.chapterCount - 1 ? '全书完，感谢阅读' : '本章完，稍作休息'}</span></div></main>
+  return `<div class="reader-shell ${chat?.open ? 'with-chat' : ''}" data-theme="${settings.theme}"><header class="reader-header"><div class="reader-brand"><button class="icon-button back-button" data-action="home" aria-label="返回书架" title="返回书架">${icon('left')}</button><span class="reader-book-title title-3">${escapeHTML(book.title)}</span></div><div class="reader-header-actions"><span class="reader-local caption-5">${icon('check')}进度已自动保存</span><nav class="header-chapter-navigation" aria-label="章节导航"><button class="chapter-button button-sm" data-action="previous" ${reader!.chapterIndex === 0 ? 'disabled' : ''}>${icon('left')}上一章</button><button class="chapter-button button-sm" data-action="next" ${reader!.chapterIndex === book.chapterCount - 1 ? 'disabled' : ''}>下一章${icon('right')}</button></nav><button class="icon-button ${reader!.drawer === 'contents' ? 'active' : ''}" data-action="contents" aria-label="章节目录" aria-expanded="${reader!.drawer === 'contents'}" title="章节目录">${icon('list')}</button><button class="icon-button ${reader!.drawer === 'settings' ? 'active' : ''}" data-action="settings" aria-label="阅读设置" aria-expanded="${reader!.drawer === 'settings'}" title="阅读设置">${icon('settings')}</button><button class="chat-toggle" data-action="chat" aria-label="对话" aria-expanded="${Boolean(chat?.open)}" aria-controls="book-chat">${icon('chat')}<span>对话</span></button></div></header>
+    <div class="reading-column"><main class="reading-main" id="main-content"><p class="reading-eyebrow caption-5">${escapeHTML(book.title)} · ${escapeHTML(book.author)}</p><h1 class="reading-chapter-title">${escapeHTML(chapter.title)}</h1><article class="reading-content" data-font="${settings.fontSize}" aria-label="${escapeHTML(chapter.title)}正文">${paragraphs || '<p>本章没有正文。</p>'}</article><div class="reading-end caption-5"><span class="end-ornament">${reader!.chapterIndex === book.chapterCount - 1 ? '全书完，感谢阅读' : '本章完，稍作休息'}</span></div></main>
     <footer class="reader-footer"><div class="reader-progress-info caption-5"><span>第 ${reader!.chapterIndex + 1} / ${book.chapterCount} 章</span><span id="reader-percent">${progress(book)}% 已读</span></div><div class="reader-progress" role="progressbar" aria-label="全书阅读进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress(book)}"><div id="reader-progress-fill" style="width:${progress(book)}%"></div></div></footer>
+    </div>${chat?.open ? chat.panelHTML() : ''}
     ${reader!.drawer ? '<div class="reader-scrim" data-action="close-drawer"></div>' : ''}${readerDrawer(book)}
   </div>`;
 }
@@ -204,6 +205,7 @@ function render(): void {
   app.innerHTML = `${book && reader ? readingView(book) : `${header()}${loading ? loadingShelf() : shelf()}`}${modalView()}`;
   document.body.style.overflow = modal || reader?.drawer ? 'hidden' : '';
   if (book && reader) {
+    chat?.sync();
     const renderedReader = reader;
     requestAnimationFrame(() => {
       if (reader !== renderedReader) return;
@@ -330,6 +332,7 @@ async function openBook(book: BookSummary): Promise<void> {
     const { index, ratio } = chapterAt(chapters, book.location);
     const window = await chapterWindow(book, index, request.signal);
     if (request.signal.aborted) return;
+    chat = new BookChatPanel(book);
     reader = { bookId: book.id, chapters, window, chapterIndex: index, chapterRatio: ratio, drawer: null };
     flushProgress();
   } catch (error) {
@@ -437,6 +440,8 @@ app.addEventListener('click', (event) => {
     flushProgress();
     cancelChapterRequest();
     openingBook = null;
+    chat?.dispose();
+    chat = null;
     reader = null;
     render();
     window.scrollTo({ top: 0, behavior: 'instant' });
@@ -511,6 +516,13 @@ app.addEventListener('click', (event) => {
     } else {
       void submitImport();
     }
+  } else if (action === 'chat' && chat) {
+    chat.open = !chat.open;
+    render();
+    if (chat.open) void chat.loadHistory();
+    document.querySelector<HTMLElement>(chat.open ? '#chat-input' : '.chat-toggle')?.focus({ preventScroll: true });
+  } else if (action === 'retry-history' && chat) {
+    void chat.loadHistory();
   } else if (action === 'contents' || action === 'settings') {
     const drawer = action === 'contents' ? 'contents' : 'settings';
     if (!reader!.drawer) previousFocus = document.activeElement as HTMLElement;
@@ -551,7 +563,9 @@ app.addEventListener('click', (event) => {
 
 app.addEventListener('input', (event) => {
   const target = event.target as HTMLInputElement | HTMLTextAreaElement;
-  if (target.id === 'book-search') {
+  if (target.id === 'chat-input' && chat) {
+    chat.setDraft(target.value);
+  } else if (target.id === 'book-search') {
     search = target.value;
     updateResults();
   } else if (target.id === 'import-title') {
@@ -561,6 +575,12 @@ app.addEventListener('input', (event) => {
   } else if (target.id === 'paste-text') {
     pasteText = target.value;
   }
+});
+
+app.addEventListener('submit', (event) => {
+  if ((event.target as HTMLElement).id !== 'chat-form') return;
+  event.preventDefault();
+  if (reader && chat) void chat.send(reader.chapterIndex, reader.chapterRatio);
 });
 
 app.addEventListener('change', (event) => {
@@ -593,12 +613,21 @@ document.addEventListener('visibilitychange', () => {
 });
 
 window.addEventListener('keydown', (event) => {
+  if ((event.target as HTMLElement).id === 'chat-input' && event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
+    event.preventDefault();
+    document.querySelector<HTMLFormElement>('#chat-form')?.requestSubmit();
+    return;
+  }
   if (event.key === 'Escape') {
     if (modal) closeModal();
     else if (reader?.drawer) {
       reader.drawer = null;
       render();
       previousFocus?.focus();
+    } else if (chat?.open) {
+      chat.open = false;
+      render();
+      document.querySelector<HTMLElement>('.chat-toggle')?.focus({ preventScroll: true });
     }
   }
   if (event.key === 'Tab' && (modal || reader?.drawer)) {
@@ -615,7 +644,7 @@ window.addEventListener('keydown', (event) => {
       first.focus();
     }
   }
-  if (reader && !reader.drawer && !modal && !['INPUT', 'TEXTAREA'].includes((event.target as HTMLElement).tagName)) {
+  if (reader && !reader.drawer && !modal && !(event.target as HTMLElement).closest('#book-chat') && !['INPUT', 'TEXTAREA'].includes((event.target as HTMLElement).tagName)) {
     if (event.key === 'ArrowRight') {
       event.preventDefault();
       void goToChapter((pendingChapter ?? reader.chapterIndex) + 1);

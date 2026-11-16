@@ -4,13 +4,14 @@ import { stat } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createApiHandler } from './server/api.mjs';
+import { createApiHandler, resolveBookDirectory } from './server/api.mjs';
 import { createAccessControl } from './server/auth.mjs';
 
 const root = fileURLToPath(new URL('./dist', import.meta.url));
 const port = Number(process.env.PORT ?? 5174);
 const host = process.env.HOST ?? '127.0.0.1';
-const api = createApiHandler();
+const directory = resolveBookDirectory();
+const api = createApiHandler({ directory });
 const access = createAccessControl();
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
 
@@ -48,5 +49,5 @@ const server = createServer((request, response) => {
 server.listen(port, host, () => {
   const address = host.includes(':') ? `[${host}]` : host;
   console.log(`墨读已启动：${access.url(`http://${address}:${server.address().port}`)}`);
-  console.log('书籍保存在 ~/.bqread/books/，可通过 BQREAD_DATA_DIR 修改。');
+  console.log(`书库目录：${directory}`);
 });

@@ -1,3 +1,4 @@
+import { bookContext } from './book-context.mjs';
 import { randomUUID } from 'node:crypto';
 import { open, readFile, readdir, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -111,6 +112,13 @@ export function createBookStore(directory) {
         if (action === 'summary') return JSON.parse((await readBytes(file, HEADER_BYTES, summarySize)).toString());
         const index = JSON.parse((await readBytes(file, HEADER_BYTES + summarySize, indexSize)).toString());
         if (action === 'toc') return index.map(({ title, start, length }) => ({ title, start, length }));
+        if (action === 'context') {
+          const book = JSON.parse((await readBytes(file, HEADER_BYTES, summarySize)).toString());
+          return await bookContext(book, index, async (i) => {
+            const { offset, bytes } = index[i];
+            return (await readBytes(file, dataStart + offset, bytes)).toString();
+          }, center);
+        }
         if (action === 'export') {
           const summary = JSON.parse((await readBytes(file, HEADER_BYTES, summarySize)).toString());
           const last = index.at(-1);
