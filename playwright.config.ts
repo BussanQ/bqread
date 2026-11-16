@@ -11,7 +11,8 @@ export default defineConfig({
   },
   webServer: {
     command: 'node tests/dev-server.mjs',
-    url: 'http://127.0.0.1:5174',
+    env: { BQREAD_TOKEN: 'bqread-browser-test-token' },
+    url: 'http://127.0.0.1:5174/?token=bqread-browser-test-token',
     reuseExistingServer: false,
   },
 });

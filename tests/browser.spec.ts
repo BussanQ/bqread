@@ -1,11 +1,31 @@
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 
-test.beforeEach(async ({ request }) => {
+test.beforeEach(async ({ request, context }) => {
+  expect((await request.get('/?token=bqread-browser-test-token')).ok()).toBe(true);
+  await context.addCookies((await request.storageState()).cookies);
   const response = await request.get('/api/books');
   expect(response.ok()).toBe(true);
   for (const book of await response.json()) {
     expect((await request.delete(`/api/books/${book.id}`)).ok()).toBe(true);
+  }
+});
+
+test('requires a valid token before opening the UI and remembers browser access', async ({ browser, baseURL }) => {
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    expect((await page.goto(baseURL!))!.status()).toBe(401);
+    expect((await page.goto(`${baseURL}/?token=wrong`))!.status()).toBe(401);
+    expect((await context.request.get(`${baseURL}/api/books`)).status()).toBe(401);
+    await page.goto(`${baseURL}/?token=bqread-browser-test-token`);
+    await expect(page.locator('.book-item')).toHaveCount(3);
+    expect((await context.cookies()).find((cookie) => cookie.name === 'bqread-session')).toMatchObject({ httpOnly: true, sameSite: 'Strict' });
+    await page.goto(baseURL!);
+    await expect(page.locator('.book-item')).toHaveCount(3);
+    expect((await context.request.get(`${baseURL}/api/books`)).status()).toBe(200);
+  } finally {
+    await context.close();
   }
 });
 
@@ -129,7 +149,7 @@ test('exports server books and retains them in a fresh browser context', async (
 
   const freshContext = await browser.newContext();
   const fresh = await freshContext.newPage();
-  await fresh.goto(page.url());
+  await fresh.goto(new URL('/?token=bqread-browser-test-token', page.url()).href);
   await expect(fresh.getByRole('button', { name: '阅读《服务端书库》' })).toBeVisible();
   await fresh.setViewportSize({ width: 390, height: 844 });
   await fresh.getByRole('button', { name: '导出《服务端书库》' }).scrollIntoViewIfNeeded();
@@ -182,7 +202,9 @@ test('migrates legacy IndexedDB books and reading progress', async ({ page, requ
   await page.reload();
   await expect(page.getByRole('button', { name: '阅读《旧版藏书》' })).toBeVisible();
   const books = await (await request.get('/api/books')).json();
-  expect(books.find((book: { id: string }) => book.id === 'legacy-book')?.content).toContain('旧版导入的书籍。');
+  expect(books.find((book: { id: string }) => book.id === 'legacy-book')).toMatchObject({ chapterCount: 2 });
+  const window = await (await request.get('/api/books/legacy-book/chapters?center=0')).json();
+  expect(window.texts[0]).toBe('旧版导入的书籍。');
   expect(await page.evaluate(async () => (await indexedDB.databases()).map((database) => database.name))).not.toContain('modu-reader');
   await page.getByRole('button', { name: '阅读《旧版藏书》' }).click();
   await expect(page.locator('.reading-chapter-title')).toHaveText('第二章 继续');
@@ -209,4 +231,52 @@ test('reports failed saves and exports without reporting success', async ({ page
   await page.getByRole('button', { name: '导出《失败后重试》' }).click();
   await expect(page.getByRole('status')).toHaveText('测试导出失败');
   await expect(page.getByRole('button', { name: '导出《失败后重试》' })).toBeEnabled();
+});
+
+test('loads one shelf summary and resumes with only nearby chapters', async ({ page, request }) => {
+  const chapters = [];
+  let content = '';
+  for (let i = 0; i < 30; i++) {
+    const title = `第${i + 1}章 测试`;
+    const body = `第${i + 1}章正文。`.repeat(300);
+    chapters.push({ title, start: content.length, content: body });
+    content += `${title}\n${body}\n`;
+  }
+  const saved = await request.post('/api/books', { data: {
+    id: 'long-book', title: '长篇', author: '作者', cover: 'blue', content, chapters,
+  } });
+  expect(saved.status()).toBe(201);
+  await page.addInitScript((location) => {
+    localStorage.setItem('modu-progress', JSON.stringify({ 'long-book': { location, lastReadAt: 1 } }));
+  }, chapters[23].start + 100);
+  const urls: string[] = [];
+  page.on('request', (request) => {
+    const url = new URL(request.url());
+    if (url.pathname.startsWith('/api/books')) urls.push(url.pathname + url.search);
+  });
+  await page.goto('/');
+  const read = page.getByRole('button', { name: '阅读《长篇》' });
+  await expect(read).toBeVisible();
+  expect(urls).toEqual(['/api/books']);
+  await read.click();
+  const title = page.locator('.reading-chapter-title');
+  await expect(title).toHaveText(chapters[23].title);
+  expect(urls.slice(1)).toEqual(['/api/books/long-book/toc', '/api/books/long-book/chapters?center=23']);
+  await page.getByRole('button', { name: '下一章', exact: true }).click();
+  await expect(title).toHaveText(chapters[24].title);
+  expect(urls).toHaveLength(3);
+  await page.getByRole('button', { name: '章节目录', exact: true }).click();
+  await page.locator('.chapter-link').nth(2).click();
+  await expect(title).toHaveText(chapters[2].title);
+  expect(urls.at(-1)).toBe('/api/books/long-book/chapters?center=2');
+  await page.getByRole('button', { name: '下一章', exact: true }).click();
+  const failedWindow = '**/chapters?center=4';
+  await page.route(failedWindow, (route) => route.fulfill({ status: 500, json: { error: '章节读取失败' } }));
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByRole('status')).toHaveText('章节读取失败');
+  await expect(title).toHaveText(chapters[3].title);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('modu-progress')!)['long-book'].location)).toBe(chapters[3].start);
+  await page.unroute(failedWindow);
+  await page.keyboard.press('ArrowRight');
+  await expect(title).toHaveText(chapters[4].title);
 });

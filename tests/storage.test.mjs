@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createApiHandler } from '../server/api.mjs';
@@ -32,9 +32,10 @@ test('books persist as files across server restarts, export TXT, and delete', as
     const saved = await result.json();
     assert.equal(saved.id, book.id);
     assert.equal(saved.location, 0);
-    const file = JSON.parse(await readFile(join(directory, 'test-book.json'), 'utf8'));
-    assert.equal(file.content, book.content);
-    assert.deepEqual(await readdir(directory), ['test-book.json']);
+    assert.equal(saved.contentLength, book.content.length);
+    assert.equal(saved.chapterCount, 1);
+    assert.equal('content' in saved, false);
+    assert.deepEqual(await readdir(directory), ['test-book.bqr']);
   } finally {
     await first.close();
   }
@@ -43,6 +44,8 @@ test('books persist as files across server restarts, export TXT, and delete', as
     const books = await (await fetch(`${second.url}/api/books`)).json();
     assert.equal(books.length, 1);
     assert.equal(books[0].title, book.title);
+    assert.equal('chapters' in books[0], false);
+    assert.equal('content' in books[0], false);
     const exported = await fetch(`${second.url}/api/books/test-book/export`);
     assert.equal(exported.status, 200);
     assert.match(exported.headers.get('content-disposition'), /filename\*=UTF-8''/);
@@ -69,4 +72,44 @@ test('rejects malformed books, invalid paths, and malformed JSON without writing
   assert.equal((await fetch(`${server.url}/api/books/%2E%2E%2Foutside/export`)).status, 400);
   assert.equal((await fetch(`${server.url}/api/books/missing`, { method: 'DELETE' })).status, 404);
   assert.deepEqual(await readdir(directory), []);
+});
+
+test('converts a large legacy book once and reads bounded windows at saved character offsets', async (context) => {
+  const directory = await mkdtemp(join(tmpdir(), 'bqread-legacy-'));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const server = await serve(directory);
+  context.after(server.close);
+  // Put an emoji across the nominal section boundary. The book has no headings.
+  const content = '文'.repeat(24 * 1024 - 1) + '🌙长篇'.repeat(1_500_000);
+  await writeFile(join(directory, 'test-book.json'), JSON.stringify({
+    ...book, content, chapters: [{ title: '全文', start: 0, content }],
+  }));
+  const base = server.url + '/api/books';
+  const shelf = await (await fetch(base)).text();
+  assert.ok(Buffer.byteLength(shelf) < 1024);
+  const [summary] = JSON.parse(shelf);
+  assert.equal(summary.contentLength, content.length);
+  assert.deepEqual(await readdir(directory), ['test-book.bqr']);
+  const toc = await (await fetch(base + '/test-book/toc')).json();
+  assert.equal(toc.length, summary.chapterCount);
+  assert.ok(toc.length > 100);
+  assert.equal(toc[1].start, 24 * 1024 - 1);
+  const center = Math.floor(toc.length * 0.8);
+  for (const target of [0, center, toc.length - 1]) {
+    const response = await fetch(base + '/test-book/chapters?center=' + target);
+    const body = await response.text();
+    assert.ok(Buffer.byteLength(body) < 225_000);
+    const { start, texts } = JSON.parse(body);
+    assert.equal(start, Math.max(0, target - 1));
+    assert.equal(texts.length, target === center ? 3 : 2);
+    texts.forEach((text, i) => {
+      const entry = toc[start + i];
+      assert.equal(text, content.slice(entry.start, entry.start + entry.length));
+      assert.ok(!text.includes('\uFFFD'));
+    });
+  }
+  for (const center of ['', '-1', '1.1', String(toc.length)]) {
+    assert.equal((await fetch(base + '/test-book/chapters?center=' + center)).status, 400);
+  }
+  assert.equal((await (await fetch(base + '/test-book/export')).text()).trim(), content);
 });

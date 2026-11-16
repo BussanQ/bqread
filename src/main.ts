@@ -1,16 +1,20 @@
 import './style.css';
 import { icon, logo } from './icons';
-import { chapterAt, createBook, decodeTextFile, parseChapters, titleFromFilename } from './parser';
+import { chapterAt, createBook, decodeTextFile, titleFromFilename } from './parser';
 import { sampleBooks } from './samples';
-import { deleteStoredBook, exportBook, getBooks, putBook, restoreReadingProgress, saveReadingProgress } from './storage';
-import type { Book, FontSize, ModalName, ReaderState, ReadingSettings, ShelfFilter } from './types';
+import { deleteStoredBook, exportBook, getBooks, getChapterWindow, getContents, putBook, restoreReadingProgress, saveReadingProgress } from './storage';
+import type { BookSummary, ChapterWindow, FontSize, ModalName, ReaderState, ReadingSettings, ShelfFilter } from './types';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 const toastRegion = document.querySelector<HTMLDivElement>('#toast-region')!;
 const SETTINGS_KEY = 'modu-settings';
 
-let books: Book[] = [];
+let books: BookSummary[] = [];
+const samples = sampleBooks();
 let loading = true;
+let openingBook: BookSummary | null = null;
+let chapterRequest: AbortController | null = null;
+let pendingChapter: number | null = null;
 let search = '';
 let filter: ShelfFilter = 'all';
 let reader: ReaderState | null = null;
@@ -48,7 +52,7 @@ function escapeHTML(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!);
 }
 
-function coverArt(book: Book): string {
+function coverArt(book: BookSummary): string {
   const theme = book.cover;
   if (theme === 'clay') {
     return '<svg class="cover-art" viewBox="0 0 200 112" fill="none" aria-hidden="true"><circle cx="100" cy="37" r="18" fill="currentColor" opacity=".25"/><path d="M0 88c30-24 54-24 78-3 25-24 50-29 122-4v31H0V88Z" fill="currentColor" opacity=".15"/><path d="M80 84V51h40v33M76 51l24-18 24 18M94 84V65h12v19" stroke="currentColor" opacity=".55" stroke-width="1.2"/><path d="M110 42V28h6v10" stroke="currentColor" opacity=".4"/><path d="M117 25c-10-6 10-9 0-16" stroke="currentColor" opacity=".3"/></svg>';
@@ -59,7 +63,7 @@ function coverArt(book: Book): string {
   return '<svg class="cover-art" viewBox="0 0 200 112" fill="none" aria-hidden="true"><circle cx="100" cy="33" r="20" fill="currentColor" opacity=".2"/><path d="M0 90c34-21 56-17 91-3 35-19 70-24 109-10M0 100c35-15 63-11 96 1 31-13 63-18 104-9" stroke="currentColor" opacity=".35"/><path d="M93 77h14l-3-35h-8l-3 35Zm7-40V20m-12 17h24" stroke="currentColor" opacity=".6"/><path d="M87 76h26l-4 7H90l-3-7Z" fill="currentColor" opacity=".35"/><path d="m99 34-60-9 60 14m2-5 61-9-61 14" fill="currentColor" opacity=".12"/><path d="M43 37c4-4 8-4 12 0 4-4 8-4 12 0m65-15c3-3 6-3 9 0 3-3 6-3 9 0" stroke="currentColor" opacity=".5"/></svg>';
 }
 
-function cover(book: Book): string {
+function cover(book: BookSummary): string {
   const series = book.sample ? '墨 读 · 治 愈 系 列' : '墨 读 · 私 人 藏 书';
   return `<div class="book-cover ${book.cover}">
     <div class="cover-series">${series}</div>
@@ -70,9 +74,9 @@ function cover(book: Book): string {
   </div>`;
 }
 
-function progress(book: Book): number {
+function progress(book: BookSummary): number {
   if (book.location <= 0) return 0;
-  return Math.min(100, Math.max(1, Math.floor((book.location / Math.max(1, book.content.length - 1)) * 100)));
+  return Math.min(100, Math.max(1, Math.floor((book.location / Math.max(1, book.contentLength - 1)) * 100)));
 }
 
 function header(): string {
@@ -102,7 +106,7 @@ function heroArt(): string {
   </svg><div class="hero-stamp"><span>慢读</span><span>时光</span></div></div>`;
 }
 
-function filteredBooks(): Book[] {
+function filteredBooks(): BookSummary[] {
   return books.filter((book) => {
     if (filter === 'reading' && progress(book) === 0) return false;
     if (filter === 'unread' && progress(book) > 0) return false;
@@ -111,7 +115,7 @@ function filteredBooks(): Book[] {
   });
 }
 
-function bookCard(book: Book): string {
+function bookCard(book: BookSummary): string {
   const percent = progress(book);
   return `<article class="book-item">
     <button class="book-open" data-action="read" data-id="${book.id}" aria-label="阅读《${escapeHTML(book.title)}》">${cover(book)}<div class="book-info"><div class="book-title-row"><h3 class="book-name">${escapeHTML(book.title)}</h3>${book.sample ? '<span class="sample-badge">试读</span>' : ''}</div><p class="book-author">${escapeHTML(book.author)}</p><div class="book-progress"><div class="progress-track" role="progressbar" aria-label="阅读进度" aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100"><div class="progress-fill" style="width:${percent}%"></div></div><span class="progress-label">${percent > 0 ? `${percent}%` : '未阅读'}</span></div></div></button>
@@ -133,7 +137,7 @@ function bookResults(): string {
 
 function shelf(): string {
   const readCount = books.filter((book) => progress(book) > 0).length;
-  const chapters = books.reduce((total, book) => total + book.chapters.length, 0);
+  const chapters = books.reduce((total, book) => total + book.chapterCount, 0);
   return `<main id="main-content" class="container">
     <section class="hero" aria-labelledby="hero-title"><div class="hero-copy"><p class="hero-eyebrow eyebrow">留一点时间，给自己</p><h1 id="hero-title"><span>把时光，</span><span>读成喜欢的样子。</span></h1><p class="hero-description">在文字里慢下来，在故事里，<br>遇见另一个自己。</p></div>${heroArt()}</section>
     <section class="library-summary" aria-label="书架概览"><div class="summary-item"><span class="summary-icon">${icon('book')}</span><div class="summary-text"><strong>${books.length}</strong><span>本藏书</span></div></div><div class="summary-separator"></div><div class="summary-item"><span class="summary-icon">${icon('clock')}</span><div class="summary-text"><strong>${readCount}</strong><span>本在读</span></div></div><div class="summary-separator"></div><div class="summary-item"><span class="summary-icon">${icon('file')}</span><div class="summary-text"><strong>${chapters}</strong><span>个章节</span></div></div><div class="summary-note caption-5">${icon('leaf')}今天，也给自己一页安静。</div></section>
@@ -148,23 +152,24 @@ function loadingShelf(): string {
   return `<main id="main-content" class="container"><section class="hero"><div><p class="hero-eyebrow eyebrow">留一点时间，给自己</p><h1><span>把时光，</span><span>读成喜欢的样子。</span></h1><p class="hero-description">正在整理你的书架，请稍候。</p></div>${heroArt()}</section><div class="book-grid" style="margin-top:48px" aria-label="正在加载书架">${Array.from({ length: 4 }, () => '<div class="skeleton-card" aria-hidden="true"><div class="skeleton-cover"></div><div class="skeleton-line"></div><div class="skeleton-line short"></div></div>').join('')}</div></main>`;
 }
 
-function currentBook(): Book | undefined {
+function currentBook(): BookSummary | undefined {
   return books.find((book) => book.id === reader?.bookId);
 }
 
-function readingView(book: Book): string {
-  const chapter = book.chapters[reader!.chapterIndex]!;
-  const paragraphs = chapter.content.split(/\n+/).filter((paragraph) => paragraph.trim()).map((paragraph) => `<p>${escapeHTML(paragraph.trim())}</p>`).join('');
-  return `<div class="reader-shell" data-theme="${settings.theme}"><header class="reader-header"><div class="reader-brand"><button class="icon-button back-button" data-action="home" aria-label="返回书架" title="返回书架">${icon('left')}</button><span class="reader-book-title title-3">${escapeHTML(book.title)}</span></div><div class="reader-header-actions"><span class="reader-local caption-5">${icon('check')}进度已自动保存</span><nav class="header-chapter-navigation" aria-label="章节导航"><button class="chapter-button button-sm" data-action="previous" ${reader!.chapterIndex === 0 ? 'disabled' : ''}>${icon('left')}上一章</button><button class="chapter-button button-sm" data-action="next" ${reader!.chapterIndex === book.chapters.length - 1 ? 'disabled' : ''}>下一章${icon('right')}</button></nav><button class="icon-button ${reader!.drawer === 'contents' ? 'active' : ''}" data-action="contents" aria-label="章节目录" aria-expanded="${reader!.drawer === 'contents'}" title="章节目录">${icon('list')}</button><button class="icon-button ${reader!.drawer === 'settings' ? 'active' : ''}" data-action="settings" aria-label="阅读设置" aria-expanded="${reader!.drawer === 'settings'}" title="阅读设置">${icon('settings')}</button></div></header>
-    <main class="reading-main" id="main-content"><p class="reading-eyebrow caption-5">${escapeHTML(book.title)} · ${escapeHTML(book.author)}</p><h1 class="reading-chapter-title">${escapeHTML(chapter.title)}</h1><article class="reading-content" data-font="${settings.fontSize}" aria-label="${escapeHTML(chapter.title)}正文">${paragraphs || '<p>本章没有正文。</p>'}</article><div class="reading-end caption-5"><span class="end-ornament">${reader!.chapterIndex === book.chapters.length - 1 ? '全书完，感谢阅读' : '本章完，稍作休息'}</span></div></main>
-    <footer class="reader-footer"><div class="reader-progress-info caption-5"><span>第 ${reader!.chapterIndex + 1} / ${book.chapters.length} 章</span><span id="reader-percent">${progress(book)}% 已读</span></div><div class="reader-progress" role="progressbar" aria-label="全书阅读进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress(book)}"><div id="reader-progress-fill" style="width:${progress(book)}%"></div></div></footer>
+function readingView(book: BookSummary): string {
+  const chapter = reader!.chapters[reader!.chapterIndex]!;
+  const text = reader!.window.texts[reader!.chapterIndex - reader!.window.start]!;
+  const paragraphs = text.split(/\n+/).filter((paragraph) => paragraph.trim()).map((paragraph) => `<p>${escapeHTML(paragraph.trim())}</p>`).join('');
+  return `<div class="reader-shell" data-theme="${settings.theme}"><header class="reader-header"><div class="reader-brand"><button class="icon-button back-button" data-action="home" aria-label="返回书架" title="返回书架">${icon('left')}</button><span class="reader-book-title title-3">${escapeHTML(book.title)}</span></div><div class="reader-header-actions"><span class="reader-local caption-5">${icon('check')}进度已自动保存</span><nav class="header-chapter-navigation" aria-label="章节导航"><button class="chapter-button button-sm" data-action="previous" ${reader!.chapterIndex === 0 ? 'disabled' : ''}>${icon('left')}上一章</button><button class="chapter-button button-sm" data-action="next" ${reader!.chapterIndex === book.chapterCount - 1 ? 'disabled' : ''}>下一章${icon('right')}</button></nav><button class="icon-button ${reader!.drawer === 'contents' ? 'active' : ''}" data-action="contents" aria-label="章节目录" aria-expanded="${reader!.drawer === 'contents'}" title="章节目录">${icon('list')}</button><button class="icon-button ${reader!.drawer === 'settings' ? 'active' : ''}" data-action="settings" aria-label="阅读设置" aria-expanded="${reader!.drawer === 'settings'}" title="阅读设置">${icon('settings')}</button></div></header>
+    <main class="reading-main" id="main-content"><p class="reading-eyebrow caption-5">${escapeHTML(book.title)} · ${escapeHTML(book.author)}</p><h1 class="reading-chapter-title">${escapeHTML(chapter.title)}</h1><article class="reading-content" data-font="${settings.fontSize}" aria-label="${escapeHTML(chapter.title)}正文">${paragraphs || '<p>本章没有正文。</p>'}</article><div class="reading-end caption-5"><span class="end-ornament">${reader!.chapterIndex === book.chapterCount - 1 ? '全书完，感谢阅读' : '本章完，稍作休息'}</span></div></main>
+    <footer class="reader-footer"><div class="reader-progress-info caption-5"><span>第 ${reader!.chapterIndex + 1} / ${book.chapterCount} 章</span><span id="reader-percent">${progress(book)}% 已读</span></div><div class="reader-progress" role="progressbar" aria-label="全书阅读进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress(book)}"><div id="reader-progress-fill" style="width:${progress(book)}%"></div></div></footer>
     ${reader!.drawer ? '<div class="reader-scrim" data-action="close-drawer"></div>' : ''}${readerDrawer(book)}
   </div>`;
 }
 
-function readerDrawer(book: Book): string {
+function readerDrawer(book: BookSummary): string {
   if (reader?.drawer === 'contents') {
-    return `<aside class="reader-drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title"><div class="drawer-header"><h2 class="drawer-title" id="drawer-title">目录</h2><button class="icon-button" data-action="close-drawer" aria-label="关闭目录">${icon('close')}</button></div><p class="drawer-subtitle body-3">共 ${book.chapters.length} 章 · 已读 ${progress(book)}%</p><ol class="chapter-list">${book.chapters.map((chapter, index) => `<li><button class="chapter-link title-4 ${index === reader!.chapterIndex ? 'active' : ''}" data-action="chapter" data-chapter="${index}" ${index === reader!.chapterIndex ? 'aria-current="location"' : ''}><span class="chapter-number">${String(index + 1).padStart(2, '0')}</span><span>${escapeHTML(chapter.title)}</span></button></li>`).join('')}</ol></aside>`;
+    return `<aside class="reader-drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title"><div class="drawer-header"><h2 class="drawer-title" id="drawer-title">目录</h2><button class="icon-button" data-action="close-drawer" aria-label="关闭目录">${icon('close')}</button></div><p class="drawer-subtitle body-3">共 ${book.chapterCount} 章 · 已读 ${progress(book)}%</p><ol class="chapter-list">${reader.chapters.map((chapter, index) => `<li><button class="chapter-link title-4 ${index === reader!.chapterIndex ? 'active' : ''}" data-action="chapter" data-chapter="${index}" ${index === reader!.chapterIndex ? 'aria-current="location"' : ''}><span class="chapter-number">${String(index + 1).padStart(2, '0')}</span><span>${escapeHTML(chapter.title)}</span></button></li>`).join('')}</ol></aside>`;
   }
   if (reader?.drawer === 'settings') {
     return `<aside class="reader-drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title"><div class="drawer-header"><h2 class="drawer-title" id="drawer-title">阅读设置</h2><button class="icon-button" data-action="close-drawer" aria-label="关闭阅读设置">${icon('close')}</button></div><section class="setting-section"><span class="setting-label title-4">阅读主题</span><div class="theme-options">${(['paper', 'sage', 'night'] as const).map((theme) => `<button class="theme-option caption-4 ${settings.theme === theme ? 'active' : ''}" data-action="theme" data-theme="${theme}" aria-pressed="${settings.theme === theme}"><span class="theme-swatch ${theme}">${icon(theme === 'night' ? 'moon' : 'sun')}</span>${{ paper: '暖纸白', sage: '护眼绿', night: '静谧夜' }[theme]}</button>`).join('')}</div></section><section class="setting-section"><span class="setting-label title-4">正文字号</span><div class="font-controls"><button class="icon-button" data-action="font" data-direction="smaller" aria-label="减小字号" ${settings.fontSize === 16 ? 'disabled' : ''}>${icon('left')}</button><span class="font-size-value" id="font-size-value">${settings.fontSize}</span><button class="icon-button" data-action="font" data-direction="larger" aria-label="增大字号" ${settings.fontSize === 20 ? 'disabled' : ''}>${icon('right')}</button></div></section><p class="setting-tip caption-2">设置会自动保存在当前浏览器。阅读时，使用键盘左右方向键也可以切换章节。</p></aside>`;
@@ -178,7 +183,7 @@ function modalView(): string {
     return `<div class="modal-backdrop" data-action="backdrop-close"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="modal-header"><div><h2 class="modal-title" id="modal-title">让阅读，简单一点</h2><p class="modal-description body-3">一份简短的墨读使用指南</p></div><button class="icon-button modal-close" data-action="close-modal" aria-label="关闭使用指南">${icon('close')}</button></div><p class="help-intro body-3">墨读是一款私人书库阅读器，无需注册。挑一本喜欢的书，就能开始。</p><ol class="help-steps"><li><div><h3 class="title-3">导入你的小说</h3><p class="body-3">选择 TXT 文件，或直接粘贴文字。支持 UTF-8 与 GB18030 编码，文件不超过 10 MB。</p></div></li><div><h3 class="title-3">找到想读的那一章</h3><p class="body-3">自动识别“第一章”等章节标题。阅读页右上角可以打开目录，随时切换。</p></div><li><div><h3 class="title-3">让页面合你的心意</h3><p class="body-3">选择暖纸白、护眼绿或静谧夜，字号也可以自由调整。</p></div></li></ol><div class="shortcuts caption-5"><span><kbd>←</kbd> 上一章</span><span><kbd>→</kbd> 下一章</span><span><kbd>Esc</kbd> 关闭面板</span></div></section></div>`;
   }
   if (modal === 'privacy') {
-    return `<div class="modal-backdrop" data-action="backdrop-close"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="modal-header"><div><h2 class="modal-title" id="modal-title">你的故事，只属于你</h2><p class="modal-description body-3">关于书籍与阅读数据的保存方式</p></div><button class="icon-button modal-close" data-action="close-modal" aria-label="关闭书籍存储说明">${icon('close')}</button></div><div class="privacy-points"><div class="privacy-point">${icon('shield')}<div><h3 class="title-3">书籍保存在服务端</h3><p class="body-3">TXT 在浏览器内解码后，以 JSON 文件保存在运行墨读的服务端 ~/.bqread/books 文件夹中。</p></div></div><div class="privacy-point">${icon('book')}<div><h3 class="title-3">阅读进度保存在浏览器</h3><p class="body-3">阅读进度与阅读偏好保存在 localStorage，清除浏览器网站数据会删除它们，但服务端书籍不受影响。</p></div></div><div class="privacy-point">${icon('file')}<div><h3 class="title-3">随时管理书籍</h3><p class="body-3">点击封面右上角的导出按钮可下载 UTF-8 TXT，点击移除按钮会删除服务端书籍。</p></div></div></div><button class="primary-button button-sm" data-action="close-modal">我知道了</button></section></div>`;
+    return `<div class="modal-backdrop" data-action="backdrop-close"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="modal-header"><div><h2 class="modal-title" id="modal-title">你的故事，只属于你</h2><p class="modal-description body-3">关于书籍与阅读数据的保存方式</p></div><button class="icon-button modal-close" data-action="close-modal" aria-label="关闭书籍存储说明">${icon('close')}</button></div><div class="privacy-points"><div class="privacy-point">${icon('shield')}<div><h3 class="title-3">书籍保存在服务端</h3><p class="body-3">TXT 在浏览器内解码后，按章节建立索引，保存在运行墨读的服务端 ~/.bqread/books 文件夹中。</p></div></div><div class="privacy-point">${icon('book')}<div><h3 class="title-3">阅读进度保存在浏览器</h3><p class="body-3">阅读进度与阅读偏好保存在 localStorage，清除浏览器网站数据会删除它们，但服务端书籍不受影响。</p></div></div><div class="privacy-point">${icon('file')}<div><h3 class="title-3">随时管理书籍</h3><p class="body-3">点击封面右上角的导出按钮可下载 UTF-8 TXT，点击移除按钮会删除服务端书籍。</p></div></div></div><button class="primary-button button-sm" data-action="close-modal">我知道了</button></section></div>`;
   }
   if (modal === 'delete') {
     const book = books.find((item) => item.id === deleteId);
@@ -192,14 +197,27 @@ function modalView(): string {
 function render(): void {
   restoringScroll = true;
   const book = currentBook();
+  if (openingBook) {
+    app.innerHTML = `<div class="reader-shell" data-theme="${settings.theme}"><header class="reader-header"><div class="reader-brand"><button class="icon-button back-button" data-action="home" aria-label="返回书架">${icon('left')}</button><span class="reader-book-title title-3">${escapeHTML(openingBook.title)}</span></div></header><main class="reading-main" role="status">正在加载阅读位置附近的章节…</main></div>`;
+    return;
+  }
   app.innerHTML = `${book && reader ? readingView(book) : `${header()}${loading ? loadingShelf() : shelf()}`}${modalView()}`;
   document.body.style.overflow = modal || reader?.drawer ? 'hidden' : '';
   if (book && reader) {
+    const renderedReader = reader;
     requestAnimationFrame(() => {
-      window.scrollTo({ top: chapterScroll(reader!.chapterRatio), behavior: 'instant' });
+      if (reader !== renderedReader) return;
+      window.scrollTo({ top: chapterScroll(reader.chapterRatio), behavior: 'instant' });
       restoringScroll = false;
     });
-    if (reader.drawer) requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('.reader-drawer .icon-button')?.focus());
+    if (reader.drawer) requestAnimationFrame(() => {
+      const drawer = document.querySelector<HTMLElement>('.reader-drawer');
+      drawer?.querySelector<HTMLButtonElement>('.icon-button')?.focus({ preventScroll: true });
+      const chapter = drawer?.querySelector<HTMLElement>('.chapter-link[aria-current="location"]');
+      if (drawer && chapter) {
+        drawer.scrollTo({ top: chapter.offsetTop - (drawer.clientHeight - chapter.offsetHeight) / 2, behavior: 'instant' });
+      }
+    });
   } else {
     restoringScroll = false;
   }
@@ -255,7 +273,7 @@ function flushProgress(): void {
   clearTimeout(saveTimer);
   const book = currentBook();
   if (!book || !reader) return;
-  book.location = Math.max(book.location, book.chapters[reader.chapterIndex]!.start + Math.floor(reader.chapterRatio * book.chapters[reader.chapterIndex]!.content.length));
+  book.location = Math.max(book.location, reader.chapters[reader.chapterIndex]!.start + Math.floor(reader.chapterRatio * reader.chapters[reader.chapterIndex]!.length));
   book.lastReadAt = Date.now();
   try {
     saveReadingProgress(book);
@@ -273,8 +291,8 @@ function recordScroll(): void {
   reader.chapterRatio = Math.min(1, Math.max(0, (window.scrollY - main.offsetTop) / range));
   const book = currentBook();
   if (!book) return;
-  const chapter = book.chapters[reader.chapterIndex]!;
-  book.location = chapter.start + Math.floor(reader.chapterRatio * chapter.content.length);
+  const chapter = reader.chapters[reader.chapterIndex]!;
+  book.location = chapter.start + Math.floor(reader.chapterRatio * chapter.length);
   const percent = document.querySelector('#reader-percent');
   const fill = document.querySelector<HTMLElement>('#reader-progress-fill');
   const bar = document.querySelector('.reader-progress');
@@ -285,33 +303,75 @@ function recordScroll(): void {
   saveTimer = setTimeout(flushProgress, 500);
 }
 
-function openBook(book: Book): void {
-  const { index, ratio } = chapterAt(book.chapters, book.location);
-  reader = { bookId: book.id, chapterIndex: index, chapterRatio: ratio, drawer: null };
-  book.lastReadAt = Date.now();
-  try {
-    saveReadingProgress(book);
-  } catch {
-    showToast('暂时无法保存进度，但可以继续阅读。');
-  }
-  render();
+function cancelChapterRequest(): void {
+  chapterRequest?.abort();
+  chapterRequest = null;
+  pendingChapter = null;
 }
 
-function goToChapter(index: number): void {
-  const book = currentBook();
-  if (!book || !reader || index < 0 || index >= book.chapters.length) return;
-  flushProgress();
-  reader.chapterIndex = index;
-  reader.chapterRatio = 0;
-  reader.drawer = null;
-  book.location = book.chapters[index]!.start;
-  book.lastReadAt = Date.now();
-  try {
-    saveReadingProgress(book);
-  } catch {
-    showToast('阅读进度暂未保存。');
-  }
+async function chapterWindow(book: BookSummary, index: number, signal: AbortSignal): Promise<ChapterWindow> {
+  const sample = samples.find((item) => book.sample && item.id === book.id);
+  if (!sample) return getChapterWindow(book.id, index, signal);
+  const start = Math.max(0, index - 1);
+  return { start, texts: sample.chapters.slice(start, index + 2).map((chapter) => chapter.content) };
+}
+
+async function openBook(book: BookSummary): Promise<void> {
+  cancelChapterRequest();
+  const request = new AbortController();
+  chapterRequest = request;
+  openingBook = book;
   render();
+  try {
+    const sample = samples.find((item) => book.sample && item.id === book.id);
+    const chapters = sample
+      ? sample.chapters.map(({ title, start, content }) => ({ title, start, length: content.length }))
+      : await getContents(book.id, request.signal);
+    const { index, ratio } = chapterAt(chapters, book.location);
+    const window = await chapterWindow(book, index, request.signal);
+    if (request.signal.aborted) return;
+    reader = { bookId: book.id, chapters, window, chapterIndex: index, chapterRatio: ratio, drawer: null };
+    flushProgress();
+  } catch (error) {
+    if (!request.signal.aborted) showToast(error instanceof Error ? error.message : '章节加载失败，请重试。');
+  } finally {
+    if (!request.signal.aborted) {
+      chapterRequest = null;
+      openingBook = null;
+      render();
+    }
+  }
+}
+
+async function goToChapter(index: number): Promise<void> {
+  const book = currentBook();
+  if (!book || !reader || index < 0 || index >= reader.chapters.length) return;
+  cancelChapterRequest();
+  const request = new AbortController();
+  chapterRequest = request;
+  pendingChapter = index;
+  try {
+    if (reader.window.texts[index - reader.window.start] === undefined) {
+      const status = document.querySelector('.reader-local');
+      if (status) status.textContent = '正在加载章节…';
+      const window = await chapterWindow(book, index, request.signal);
+      if (request.signal.aborted) return;
+      reader.window = window;
+    }
+    reader.chapterIndex = index;
+    reader.chapterRatio = 0;
+    reader.drawer = null;
+    book.location = reader.chapters[index]!.start;
+    flushProgress();
+  } catch (error) {
+    if (!request.signal.aborted) showToast(error instanceof Error ? error.message : '章节加载失败，请重试。');
+  } finally {
+    if (!request.signal.aborted) {
+      chapterRequest = null;
+      pendingChapter = null;
+      render();
+    }
+  }
 }
 
 function syncImportFields(): void {
@@ -346,8 +406,7 @@ async function submitImport(): Promise<void> {
   try {
     const text = importTab === 'file' ? await decodeTextFile(importFile!) : pasteText;
     const book = createBook(text, importTitle, importAuthor, books.length);
-    await putBook(book);
-    books.push(book);
+    books.push(await putBook(book));
     importFile = null;
     importTitle = '';
     importAuthor = '';
@@ -376,6 +435,8 @@ app.addEventListener('click', (event) => {
     if (event.target === button && !importing) closeModal();
   } else if (action === 'home') {
     flushProgress();
+    cancelChapterRequest();
+    openingBook = null;
     reader = null;
     render();
     window.scrollTo({ top: 0, behavior: 'instant' });
@@ -389,7 +450,7 @@ app.addEventListener('click', (event) => {
     closeModal();
   } else if (action === 'read') {
     const book = books.find((item) => item.id === button.dataset.id);
-    if (book) openBook(book);
+    if (book) void openBook(book);
   } else if (action === 'export') {
     const book = books.find((item) => item.id === button.dataset.id);
     if (book && !book.sample) {
@@ -461,11 +522,11 @@ app.addEventListener('click', (event) => {
     render();
     previousFocus?.focus();
   } else if (action === 'previous') {
-    goToChapter(reader!.chapterIndex - 1);
+    void goToChapter((pendingChapter ?? reader!.chapterIndex) - 1);
   } else if (action === 'next') {
-    goToChapter(reader!.chapterIndex + 1);
+    void goToChapter((pendingChapter ?? reader!.chapterIndex) + 1);
   } else if (action === 'chapter') {
-    goToChapter(Number(button.dataset.chapter));
+    void goToChapter(Number(button.dataset.chapter));
   } else if (action === 'theme') {
     settings.theme = button.dataset.theme as ReadingSettings['theme'];
     document.querySelector('.reader-shell')?.setAttribute('data-theme', settings.theme);
@@ -557,10 +618,10 @@ window.addEventListener('keydown', (event) => {
   if (reader && !reader.drawer && !modal && !['INPUT', 'TEXTAREA'].includes((event.target as HTMLElement).tagName)) {
     if (event.key === 'ArrowRight') {
       event.preventDefault();
-      goToChapter(reader.chapterIndex + 1);
+      void goToChapter((pendingChapter ?? reader.chapterIndex) + 1);
     } else if (event.key === 'ArrowLeft') {
       event.preventDefault();
-      goToChapter(reader.chapterIndex - 1);
+      void goToChapter((pendingChapter ?? reader.chapterIndex) - 1);
     }
   }
 });
@@ -572,11 +633,10 @@ async function init(): Promise<void> {
     showToast(error instanceof Error ? error.message : '服务端书库暂不可用，试读仍可正常进行。');
   }
   const existingSamples = new Set(books.filter((book) => book.sample).map((book) => book.id));
-  books = restoreReadingProgress([...books, ...sampleBooks().filter((book) => !existingSamples.has(book.id))]);
-  books = books.map((book) => {
-    if (!Array.isArray(book.chapters) || book.chapters.length === 0) book.chapters = parseChapters(book.content);
-    return book;
-  });
+  const sampleSummaries = samples.filter((book) => !existingSamples.has(book.id)).map(({ chapters, content, ...book }) => ({
+    ...book, chapterCount: chapters.length, contentLength: content.length,
+  }));
+  books = restoreReadingProgress([...books, ...sampleSummaries]);
   loading = false;
   render();
 }

@@ -27,7 +27,23 @@ export interface ReadingSettings {
   theme: ReadingTheme;
 }
 
+export interface BookSummary extends Omit<Book, 'content' | 'chapters'> {
+  contentLength: number;
+  chapterCount: number;
+}
+
+export interface ChapterInfo extends Omit<Chapter, 'content'> {
+  length: number;
+}
+
+export interface ChapterWindow {
+  start: number;
+  texts: string[];
+}
+
 export interface ReaderState {
+  chapters: ChapterInfo[];
+  window: ChapterWindow;
   bookId: string;
   chapterIndex: number;
   chapterRatio: number;

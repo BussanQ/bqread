@@ -1,4 +1,4 @@
-import type { Book } from './types';
+import type { Book, BookSummary, ChapterInfo, ChapterWindow } from './types';
 
 const PROGRESS_KEY = 'modu-progress';
 
@@ -33,7 +33,7 @@ async function responseJSON(response: Response): Promise<unknown> {
   return response.json();
 }
 
-export function restoreReadingProgress(books: Book[]): Book[] {
+export function restoreReadingProgress(books: BookSummary[]): BookSummary[] {
   const progress = readProgress();
   return books.map((book) => ({ ...book, location: progress[book.id]?.location ?? 0, lastReadAt: progress[book.id]?.lastReadAt ?? null }));
 }
@@ -51,19 +51,25 @@ async function legacyBooks(): Promise<IDBDatabase | null> {
   });
 }
 
-async function migrateLegacyBooks(existing: Book[]): Promise<void> {
+function idbResult<T>(request: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(new Error('旧版书籍读取失败，请稍后重试迁移。'));
+  });
+}
+
+async function migrateLegacyBooks(existing: BookSummary[]): Promise<void> {
   const database = await legacyBooks();
   if (!database) return;
   try {
     if (database.objectStoreNames.contains('books')) {
-      const books = await new Promise<Book[]>((resolve, reject) => {
-        const request = database.transaction('books', 'readonly').objectStore('books').getAll();
-        request.onsuccess = () => resolve(request.result as Book[]);
-        request.onerror = () => reject(new Error('旧版书籍读取失败，请稍后重试迁移。'));
-      });
+      const readStore = () => database.transaction('books', 'readonly').objectStore('books');
+      const keys = await idbResult(readStore().getAllKeys());
       const savedIds = new Set(existing.map((book) => book.id));
-      for (const book of books) {
-        if (!book.sample && !savedIds.has(book.id)) await putBook(book);
+      for (const key of keys) {
+        const book: Book | undefined = await idbResult(readStore().get(key));
+        if (!book) continue;
+        if (!book.sample && !savedIds.has(book.id)) existing.push(await putBook(book));
         saveReadingProgress(book);
       }
     }
@@ -79,30 +85,36 @@ async function migrateLegacyBooks(existing: Book[]): Promise<void> {
   });
 }
 
-export async function getBooks(): Promise<Book[]> {
-  const existing = await responseJSON(await fetch('/api/books')) as Book[];
-  await migrateLegacyBooks(existing);
-  return await responseJSON(await fetch('/api/books')) as Book[];
+export async function getBooks(): Promise<BookSummary[]> {
+  const books = await responseJSON(await fetch('/api/books')) as BookSummary[];
+  await migrateLegacyBooks(books);
+  return books.sort((a, b) => b.addedAt - a.addedAt);
 }
 
-export async function putBook(book: Book): Promise<void> {
-  if (!book.sample) {
-    const response = await fetch('/api/books', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(book),
-    });
-    await responseJSON(response);
-  }
+export async function getContents(id: string, signal: AbortSignal): Promise<ChapterInfo[]> {
+  return await responseJSON(await fetch(`/api/books/${encodeURIComponent(id)}/toc`, { signal })) as ChapterInfo[];
 }
 
-export function saveReadingProgress(book: Book): void {
+export async function getChapterWindow(id: string, center: number, signal: AbortSignal): Promise<ChapterWindow> {
+  return await responseJSON(await fetch(`/api/books/${encodeURIComponent(id)}/chapters?center=${center}`, { signal })) as ChapterWindow;
+}
+
+export async function putBook(book: Book): Promise<BookSummary> {
+  const response = await fetch('/api/books', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(book),
+  });
+  return await responseJSON(response) as BookSummary;
+}
+
+export function saveReadingProgress(book: Pick<Book, 'id' | 'location' | 'lastReadAt'>): void {
   const progress = readProgress();
   progress[book.id] = { location: book.location, lastReadAt: book.lastReadAt };
   saveProgress(progress);
 }
 
-export async function exportBook(book: Book): Promise<void> {
+export async function exportBook(book: BookSummary): Promise<void> {
   const response = await fetch(`/api/books/${encodeURIComponent(book.id)}/export`);
   if (!response.ok) await responseJSON(response);
   const url = URL.createObjectURL(await response.blob());

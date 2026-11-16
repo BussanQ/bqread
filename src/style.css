@@ -209,7 +209,7 @@ kbd { border: 1px solid #d7ddcb; border-radius: 4px; background: #fffefa; paddin
 .reading-content { font-family: 'Songti SC', 'Noto Serif CJK SC', SimSun, serif; font-size: 20px; line-height: 40px; letter-spacing: 1px; }
 .reading-content[data-font='16'] { font-size: 16px; line-height: 32px; }
 .reading-content[data-font='18'] { font-size: 18px; line-height: 36px; }
-.reading-content p { margin: 0 0 24px; text-indent: 2em; text-wrap: pretty; overflow-wrap: anywhere; }
+.reading-content p { margin: 0 0 24px; text-indent: 2em; text-wrap: wrap; text-align: justify; text-align-last: start; overflow-wrap: anywhere; }
 .reading-end { text-align: center; color: var(--reader-muted); margin-top: 64px; }
 .reading-end .end-ornament { display: flex; align-items: center; gap: 16px; justify-content: center; }
 .end-ornament::before, .end-ornament::after { content: ''; width: 32px; height: 1px; background: var(--reader-muted); opacity: .4; }

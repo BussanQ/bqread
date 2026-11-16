@@ -1,11 +1,13 @@
-import type { Book, Chapter, CoverTheme } from './types';
+import type { Book, Chapter, ChapterInfo, CoverTheme } from './types';
 
 const HEADING = /^[\t ]*(第[0-9零一二三四五六七八九十百千万两]+[章节卷回部集](?:[\t ]+[^\n]{0,60})?|楔子|序章|序言|尾声|后记)[\t ]*$/gm;
 const covers: CoverTheme[] = ['forest', 'clay', 'sand', 'blue', 'plum'];
 
-export function chapterAt(chapters: Chapter[], location: number): { index: number; ratio: number } {
+export function chapterAt(chapters: (Chapter | ChapterInfo)[], location: number): { index: number; ratio: number } {
   const index = Math.max(0, chapters.findLastIndex((chapter) => chapter.start <= location));
-  return { index, ratio: Math.min(1, Math.max(0, (location - chapters[index]!.start) / Math.max(1, chapters[index]!.content.length))) };
+  const chapter = chapters[index]!;
+  const length = 'length' in chapter ? chapter.length : chapter.content.length;
+  return { index, ratio: Math.min(1, Math.max(0, (location - chapter.start) / Math.max(1, length))) };
 }
 
 export function normalizeText(text: string): string {

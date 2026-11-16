@@ -10,7 +10,10 @@ const context = await browser.newContext({ viewport: { width: 1440, height: 1080
 const page = await context.newPage();
 const errors = [];
 page.on('pageerror', (error) => errors.push(error.message));
-await page.goto('http://127.0.0.1:5174', { waitUntil: 'networkidle' });
+const address = new URL(process.env.BQREAD_URL ?? 'http://127.0.0.1:5174');
+if (process.env.BQREAD_TOKEN) address.searchParams.set('token', process.env.BQREAD_TOKEN);
+assert.ok(address.searchParams.get('token'), 'Set BQREAD_URL to the startup URL, or BQREAD_TOKEN to the configured token.');
+await page.goto(address.href, { waitUntil: 'networkidle' });
 await page.locator('.book-item').first().waitFor();
 assert.equal(await page.locator('.book-item').count(), 3);
 assert.match(await page.title(), /墨读/);
