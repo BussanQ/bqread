@@ -159,11 +159,17 @@ function currentBook(): BookSummary | undefined {
 function readingView(book: BookSummary): string {
   const chapter = reader!.chapters[reader!.chapterIndex]!;
   const text = reader!.window.texts[reader!.chapterIndex - reader!.window.start]!;
-  const paragraphs = text.split(/\n+/).filter((paragraph) => paragraph.trim()).map((paragraph) => `<p>${escapeHTML(paragraph.trim())}</p>`).join('');
+  const paragraphs: string[] = [];
+  for (const line of text.matchAll(/[^\n]+/g)) {
+    const trimmed = line[0].trimStart();
+    if (!trimmed) continue;
+    const start = line.index! + line[0].length - trimmed.length;
+    paragraphs.push(`<p data-start="${start}">${escapeHTML(trimmed.trimEnd())}</p>`);
+  }
   return `<div class="reader-shell ${chat?.open ? 'with-chat' : ''}" data-theme="${settings.theme}"><header class="reader-header"><div class="reader-brand"><button class="icon-button back-button" data-action="home" aria-label="返回书架" title="返回书架">${icon('left')}</button><span class="reader-book-title title-3">${escapeHTML(book.title)}</span></div><div class="reader-header-actions"><span class="reader-local caption-5">${icon('check')}进度已自动保存</span><nav class="header-chapter-navigation" aria-label="章节导航"><button class="chapter-button button-sm" data-action="previous" ${reader!.chapterIndex === 0 ? 'disabled' : ''}>${icon('left')}上一章</button><button class="chapter-button button-sm" data-action="next" ${reader!.chapterIndex === book.chapterCount - 1 ? 'disabled' : ''}>下一章${icon('right')}</button></nav><button class="icon-button ${reader!.drawer === 'contents' ? 'active' : ''}" data-action="contents" aria-label="章节目录" aria-expanded="${reader!.drawer === 'contents'}" title="章节目录">${icon('list')}</button><button class="icon-button ${reader!.drawer === 'settings' ? 'active' : ''}" data-action="settings" aria-label="阅读设置" aria-expanded="${reader!.drawer === 'settings'}" title="阅读设置">${icon('settings')}</button><button class="chat-toggle" data-action="chat" aria-label="对话" aria-expanded="${Boolean(chat?.open)}" aria-controls="book-chat">${icon('chat')}<span>对话</span></button></div></header>
-    <div class="reading-column"><main class="reading-main" id="main-content"><p class="reading-eyebrow caption-5">${escapeHTML(book.title)} · ${escapeHTML(book.author)}</p><h1 class="reading-chapter-title">${escapeHTML(chapter.title)}</h1><article class="reading-content" data-font="${settings.fontSize}" aria-label="${escapeHTML(chapter.title)}正文">${paragraphs || '<p>本章没有正文。</p>'}</article><div class="reading-end caption-5"><span class="end-ornament">${reader!.chapterIndex === book.chapterCount - 1 ? '全书完，感谢阅读' : '本章完，稍作休息'}</span></div></main>
+    <div class="reading-column"><main class="reading-main" id="main-content"><p class="reading-eyebrow caption-5">${escapeHTML(book.title)} · ${escapeHTML(book.author)}</p><h1 class="reading-chapter-title">${escapeHTML(chapter.title)}</h1><article class="reading-content" data-font="${settings.fontSize}" aria-label="${escapeHTML(chapter.title)}正文">${paragraphs.join('') || '<p>本章没有正文。</p>'}</article><div class="reading-end caption-5"><span class="end-ornament">${reader!.chapterIndex === book.chapterCount - 1 ? '全书完，感谢阅读' : '本章完，稍作休息'}</span></div></main>
     <footer class="reader-footer"><div class="reader-progress-info caption-5"><span>第 ${reader!.chapterIndex + 1} / ${book.chapterCount} 章</span><span id="reader-percent">${progress(book)}% 已读</span></div><div class="reader-progress" role="progressbar" aria-label="全书阅读进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress(book)}"><div id="reader-progress-fill" style="width:${progress(book)}%"></div></div></footer>
-    </div>${chat?.open ? chat.panelHTML() : ''}
+    </div><button type="button" class="passage-chat" data-action="passage-chat" aria-label="就选段对话" aria-controls="book-chat" hidden>${icon('chat')}对话</button>${chat?.open ? chat.panelHTML() : ''}
     ${reader!.drawer ? '<div class="reader-scrim" data-action="close-drawer"></div>' : ''}${readerDrawer(book)}
   </div>`;
 }
@@ -361,6 +367,7 @@ async function goToChapter(index: number): Promise<void> {
       if (request.signal.aborted) return;
       reader.window = window;
     }
+    if (reader.chapterIndex !== index) chat?.setPassage();
     reader.chapterIndex = index;
     reader.chapterRatio = 0;
     reader.drawer = null;
@@ -428,6 +435,88 @@ async function submitImport(): Promise<void> {
     document.querySelector<HTMLInputElement | HTMLTextAreaElement>(importTab === 'file' && !importFile ? '#novel-file' : '#import-title')?.focus();
   }
 }
+
+// Paragraphs render trimmed lines. Map DOM endpoints back to the original chapter,
+// retaining intervening line breaks and indentation even for backward selections.
+function passageOffset(article: HTMLElement, node: Node, offset: number, atEnd: boolean): number | undefined {
+  if (!article.contains(node)) return;
+  const paragraph = node === article
+    ? article.children[offset - (atEnd ? 1 : 0)]
+    : node instanceof Element ? node : node.parentElement;
+  if (!(paragraph instanceof HTMLElement) || !paragraph.matches('p[data-start]')) return;
+  const length = paragraph.firstChild?.textContent?.length ?? 0;
+  let within = offset;
+  if (node === article) within = atEnd ? length : 0;
+  else if (node === paragraph) within = offset === 0 ? 0 : length;
+  return Number(paragraph.dataset.start) + within;
+}
+
+function positionPassageButton(): void {
+  const button = document.querySelector<HTMLButtonElement>('.passage-chat');
+  if (!button || button.hidden) return;
+  const selection = window.getSelection();
+  if (!selection?.rangeCount || selection.isCollapsed) {
+    button.hidden = true;
+    return;
+  }
+  const range = selection.getRangeAt(0);
+  const backward = selection.focusNode === range.startContainer && selection.focusOffset === range.startOffset;
+  const endpoint = range.cloneRange();
+  endpoint.collapse(backward);
+  let rect = endpoint.getBoundingClientRect();
+  if (!rect.height) {
+    const lines = range.getClientRects();
+    if (lines.length) rect = lines[backward ? 0 : lines.length - 1]!;
+  }
+  const top = document.querySelector('.reader-header')!.getBoundingClientRect().bottom + 4;
+  const bottom = document.querySelector('.reader-footer')!.getBoundingClientRect().top - 4;
+  button.style.visibility = rect.bottom < top || rect.top > bottom || !rect.height ? 'hidden' : 'visible';
+  const right = document.querySelector('.reading-column')!.getBoundingClientRect().right;
+  button.style.left = Math.max(6, Math.min(rect.left - button.offsetWidth / 2, right - button.offsetWidth - 6)) + 'px';
+  button.style.top = (rect.top - button.offsetHeight - 7 >= top ? rect.top - button.offsetHeight - 7 : Math.min(rect.bottom + 7, bottom - button.offsetHeight)) + 'px';
+}
+
+function capturePassage(): void {
+  const selection = window.getSelection();
+  const article = document.querySelector<HTMLElement>('.reading-content');
+  const heading = document.querySelector<HTMLElement>('.reading-chapter-title');
+  const button = document.querySelector<HTMLButtonElement>('.passage-chat');
+  if (!reader || !chat || !article || !heading || !button) return;
+  if (!selection?.rangeCount || selection.isCollapsed || reader.drawer) {
+    button.hidden = true;
+    return;
+  }
+  const range = selection.getRangeAt(0);
+  const fromTitle = heading.contains(range.startContainer);
+  const prefix = fromTitle ? heading.textContent + '\n' : '';
+  function offset(node: Node, value: number, atEnd: boolean): number | undefined {
+    if (fromTitle && heading!.contains(node)) return node === heading && value > 0 ? prefix.length - 1 : value;
+    const index = passageOffset(article!, node, value, atEnd);
+    if (index !== undefined) return prefix.length + index;
+  }
+  const start = offset(range.startContainer, range.startOffset, false);
+  const end = offset(range.endContainer, range.endOffset, true);
+  if (start === undefined || end === undefined || start >= end) {
+    button.hidden = true;
+    if (range.intersectsNode(article) || range.intersectsNode(heading)) chat.setPassage();
+    return;
+  }
+  const text = reader.window.texts[reader.chapterIndex - reader.window.start]!;
+  const previewEnd = Math.min(end, start + 160);
+  const preview = prefix.slice(start, previewEnd) + text.slice(Math.max(0, start - prefix.length), Math.max(0, previewEnd - prefix.length));
+  chat.setPassage({ start, end, fromTitle: fromTitle || undefined, preview: end > previewEnd ? preview + '…' : preview });
+  button.hidden = false;
+  positionPassageButton();
+}
+
+document.addEventListener('selectionchange', capturePassage);
+window.addEventListener('resize', positionPassageButton);
+app.addEventListener('pointerdown', (event) => {
+  const target = event.target as HTMLElement;
+  if (target.closest('.passage-chat')) event.preventDefault();
+  else if (target.closest('.reading-content, .reading-chapter-title')) chat?.setPassage();
+  else if (target.closest('.chat-toggle, #book-chat')) capturePassage();
+});
 
 app.addEventListener('click', (event) => {
   const target = event.target as HTMLElement;
@@ -516,11 +605,19 @@ app.addEventListener('click', (event) => {
     } else {
       void submitImport();
     }
-  } else if (action === 'chat' && chat) {
-    chat.open = !chat.open;
-    render();
-    if (chat.open) void chat.loadHistory();
+  } else if ((action === 'chat' || action === 'passage-chat') && chat) {
+    if (action === 'passage-chat') window.getSelection()?.removeAllRanges();
+    if (action === 'chat' || !chat.open) {
+      chat.open = action === 'passage-chat' || !chat.open;
+      render();
+      if (chat.open) void chat.loadHistory();
+    }
     document.querySelector<HTMLElement>(chat.open ? '#chat-input' : '.chat-toggle')?.focus({ preventScroll: true });
+  } else if (action === 'clear-chat' && chat) {
+    void chat.clear();
+  } else if (action === 'clear-passage' && chat) {
+    chat.setPassage();
+    document.querySelector<HTMLElement>('#chat-input')?.focus({ preventScroll: true });
   } else if (action === 'retry-history' && chat) {
     void chat.loadHistory();
   } else if (action === 'contents' || action === 'settings') {
@@ -605,6 +702,7 @@ app.addEventListener('drop', (event) => {
 });
 
 window.addEventListener('scroll', () => {
+  positionPassageButton();
   if (reader && scrollFrame === null) scrollFrame = requestAnimationFrame(recordScroll);
 }, { passive: true });
 window.addEventListener('pagehide', flushProgress);

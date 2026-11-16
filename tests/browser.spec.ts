@@ -283,9 +283,18 @@ test('loads one shelf summary and resumes with only nearby chapters', async ({ p
 
 test('opens book chat alongside the text, retains replies across chapters and isolates books', async ({ page }) => {
   const turns: { question: string; reply: { answer: string; citation: { title: string; quote: string } } }[] = [];
-  await page.route('**/api/books/sample-0/chat?sample=true', (route) => route.fulfill({ json: { turns } }));
+  let conversation = 'first-session';
+  await page.route('**/api/books/sample-0/chat?sample=true', async (route) => {
+    if (route.request().method() === 'DELETE') {
+      expect(route.request().postDataJSON().conversation).toBe(conversation);
+      turns.length = 0;
+      conversation = 'new-session';
+    }
+    await route.fulfill({ json: { conversation, turns } });
+  });
   await page.route('**/api/books/sample-0/chat', async (route) => {
-    const { question, sample } = route.request().postDataJSON();
+    const { question, sample, conversation: sentConversation } = route.request().postDataJSON();
+    expect(sentConversation).toBe(conversation);
     expect(sample).toBe(true);
     const reply = { answer: '十五年。', citation: { title: '第一章 灯塔亮起', quote: '她已经离开这座小岛十五年' } };
     turns.push({ question, reply });
@@ -318,6 +327,16 @@ test('opens book chat alongside the text, retains replies across chapters and is
   await input.fill('可以接着讲吗？');
   await input.press('Enter');
   await expect(panel.locator('.chat-answer')).toHaveCount(2);
+  await input.fill('旧草稿');
+  await page.locator('.reading-content p').first().evaluate(el => window.getSelection()!.selectAllChildren(el));
+  await expect(panel.locator('.chat-selection')).toBeVisible();
+  await panel.getByRole('button', { name: '清理聊天' }).click();
+  await expect(input).toHaveValue('');
+  await expect(panel.locator('.chat-answer')).toHaveCount(0);
+  await expect(panel.locator('.chat-selection')).toBeHidden();
+  await input.fill('新会话的问题');
+  await input.press('Enter');
+  await expect(panel.locator('.chat-user')).toHaveText('新会话的问题');
   await page.getByRole('button', { name: '返回书架' }).click();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: '阅读《山居日记》' }).click();
@@ -327,4 +346,63 @@ test('opens book chat alongside the text, retains replies across chapters and is
   expect((await panel.boundingBox())!.width).toBe(390);
   await panel.getByRole('button', { name: '关闭对话' }).click();
   await expect(page.locator('.reading-main')).toBeVisible();
+});
+
+test('uses a body selection as the reference for one chat turn', async ({ page }) => {
+  const book = { id: 'selection-book', title: '选段测试', author: '佚名', cover: 'blue',
+    content: '序🪶言。  \n\n  第二段原文。\n下一章。',
+    chapters: [{ title: '第一章', start: 0, content: '序🪶言。  \n\n  第二段原文。' }, { title: '第二章', start: 19, content: '下一章。' }] };
+  expect((await page.request.post('/api/books', { data: book })).ok()).toBe(true);
+  await page.goto('/');
+  await page.getByRole('button', { name: '阅读《选段测试》' }).click();
+  const article = page.locator('.reading-content');
+  const select = () => article.evaluate((el) => {
+    const [first, second] = el.querySelectorAll('p');
+    window.getSelection()!.setBaseAndExtent(second.firstChild!, 3, first.firstChild!, 1);
+  });
+  const selected = '🪶言。  \n\n  第二段';
+  const requests: { passage?: { start: number; end: number } }[] = [];
+  await page.route('**/api/books/selection-book/chat', async (route) => {
+    requests.push(route.request().postDataJSON());
+    await route.fulfill({ json: { index: requests.length - 1, answer: '回答', reference: requests.length === 1 ? { title: '第一章', text: selected } : undefined } });
+  });
+  await select();
+  const popup = page.getByRole('button', { name: '就选段对话' });
+  await expect(popup).toBeVisible();
+  await popup.click();
+  const preview = page.locator('.chat-selection');
+  await expect(preview.locator('p')).toHaveText(selected);
+  const input = page.getByRole('textbox', { name: '关于本书的问题' });
+  await input.fill('这段话怎么理解？');
+  await expect(page.getByRole('button', { name: '发送消息' })).toBeEnabled();
+  await input.press('Enter');
+  await expect(page.locator('.chat-reference')).toContainText('第一章');
+  expect(requests[0].passage).toEqual({ start: 1, end: 1 + selected.length });
+  await expect(preview).toBeHidden();
+  await select();
+  await expect(preview).toBeVisible();
+  await page.getByRole('button', { name: '移除选段' }).click();
+  await expect(preview).toBeHidden();
+  await input.fill('这一章讲了什么？');
+  await input.press('Enter');
+  await expect(page.locator('.chat-answer')).toHaveCount(2);
+  expect(requests[1].passage).toBeUndefined();
+  const title = page.locator('.reading-chapter-title');
+  await title.evaluate((el) => window.getSelection()!.setBaseAndExtent(el.firstChild!, 1, el.firstChild!, 3));
+  const bounds = await title.boundingBox();
+  await expect(popup).toBeVisible();
+  const popupBounds = await popup.boundingBox();
+  expect(popupBounds!.y + popupBounds!.height).toBeLessThanOrEqual(bounds!.y + bounds!.height);
+  await popup.click();
+  await expect(input).toBeFocused();
+  await expect(preview.locator('p')).toHaveText('一章');
+  await expect(popup).toBeHidden();
+  await input.fill('这个标题有什么含义？');
+  await input.press('Enter');
+  await expect(page.locator('.chat-answer')).toHaveCount(3);
+  expect(requests[2].passage).toEqual({ start: 1, end: 3, fromTitle: true });
+  await select();
+  await expect(preview).toBeVisible();
+  await page.getByRole('button', { name: '下一章', exact: true }).click();
+  await expect(preview).toBeHidden();
 });

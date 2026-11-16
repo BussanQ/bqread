@@ -1,4 +1,4 @@
-import { bookContext } from './book-context.mjs';
+import { prepareBookFiles } from './book-files.mjs';
 import { randomUUID } from 'node:crypto';
 import { open, readFile, readdir, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -107,17 +107,17 @@ export function createBookStore(directory) {
         const summarySize = header.readUInt32BE(4);
         const indexSize = header.readUInt32BE(8);
         const dataStart = HEADER_BYTES + summarySize + indexSize;
-        const { size } = await file.stat();
+        const { size, ino, mtimeMs } = await file.stat();
         if (header.toString('ascii', 0, 4) !== MAGIC || dataStart > size) throw new Error('书籍索引不完整。');
         if (action === 'summary') return JSON.parse((await readBytes(file, HEADER_BYTES, summarySize)).toString());
         const index = JSON.parse((await readBytes(file, HEADER_BYTES + summarySize, indexSize)).toString());
         if (action === 'toc') return index.map(({ title, start, length }) => ({ title, start, length }));
-        if (action === 'context') {
+        if (action === 'agent-files') {
           const book = JSON.parse((await readBytes(file, HEADER_BYTES, summarySize)).toString());
-          return await bookContext(book, index, async (i) => {
+          return await prepareBookFiles(directory, 'book-' + id, [ino, size, mtimeMs].join('-'), book, index, async (i) => {
             const { offset, bytes } = index[i];
             return (await readBytes(file, dataStart + offset, bytes)).toString();
-          }, center);
+          });
         }
         if (action === 'export') {
           const summary = JSON.parse((await readBytes(file, HEADER_BYTES, summarySize)).toString());
@@ -160,12 +160,14 @@ export function createBookStore(directory) {
     save(book) {
       return withBook(book.id, async (path) => {
         const summary = await writeBook(path + '.bqr', book);
+        await rm(join(directory, 'agent-books', 'book-' + book.id), { recursive: true, force: true });
         await rm(path + '.json', { force: true });
         return summary;
       });
     },
     remove(id) {
       return withBook(id, async (path) => {
+        await rm(join(directory, 'agent-books', 'book-' + id), { recursive: true, force: true });
         let removedLegacy = false;
         try {
           await rm(path + '.json');

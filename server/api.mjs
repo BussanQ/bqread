@@ -13,6 +13,16 @@ function json(response, status, value) {
   response.end(JSON.stringify(value));
 }
 
+function chatFrame(response, frame) {
+  if (response.destroyed) return;
+  if (!response.headersSent) {
+    response.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+    response.setHeader('Cache-Control', 'no-store, no-transform');
+    response.setHeader('X-Accel-Buffering', 'no');
+  }
+  response.write(JSON.stringify(frame) + '\n');
+}
+
 async function requestBody(request, limit = MAX_BODY_SIZE) {
   return new Promise((resolveBody, reject) => {
     let size = 0;
@@ -76,8 +86,17 @@ export function createApiHandler(options = {}) {
       if (id && action === 'chat' && request.method === 'GET') {
         return json(response, 200, await history.list(id, url.searchParams.get('sample') === 'true'));
       }
+      if (id && action === 'chat' && request.method === 'DELETE') {
+        const { conversation } = JSON.parse(await requestBody(request, 2048));
+        return json(response, 200, await history.clear(id, url.searchParams.get('sample') === 'true', conversation));
+      }
       if (id && action === 'chat' && request.method === 'POST') {
         const input = JSON.parse(await requestBody(request, 16384));
+        if (request.headers.accept?.includes('application/x-ndjson')) {
+          const reply = await history.ask(id, input, (step) => chatFrame(response, { type: 'activity', step }));
+          chatFrame(response, { type: 'done', reply });
+          return response.end();
+        }
         const reply = await history.ask(id, input);
         if (!response.destroyed) return json(response, 200, reply);
         return;
@@ -109,10 +128,15 @@ export function createApiHandler(options = {}) {
 
       return json(response, 405, { error: '不支持这个操作。' });
     } catch (error) {
-      if (response.headersSent) return response.end();
-      if (error.code === 'ENOENT') return json(response, 404, { error: '这本书已经不存在。' });
-      const status = error instanceof SyntaxError || error instanceof URIError ? 400 : (error.status ?? 500);
-      return json(response, status, { error: status === 500 ? '服务端书库暂时不可用，请检查文件夹权限。' : error.message });
+      const status = error.code === 'ENOENT' ? 404 : error instanceof SyntaxError || error instanceof URIError ? 400 : (error.status ?? 500);
+      const message = error.code === 'ENOENT' ? '这本书已经不存在。' : status === 500 ? '服务端书库暂时不可用，请检查文件夹权限。' : error.message;
+      if (response.headersSent) {
+        if (response.getHeader('Content-Type')?.toString().startsWith('application/x-ndjson')) {
+          chatFrame(response, { type: 'error', error: message });
+        }
+        return response.end();
+      }
+      return json(response, status, { error: message });
     }
   };
 }
