@@ -68,7 +68,7 @@ export function resolveBookDirectory(configured = process.env.BQREAD_DATA_DIR) {
 export function createApiHandler(options = {}) {
   const directory = resolveBookDirectory(options.directory);
   const store = createBookStore(directory);
-  const history = createBookHistory(directory, createBookChat(store, directory, options.agent));
+  const history = createBookHistory(directory, createBookChat(store, options.ai));
   return async function apiHandler(request, response, next) {
     const url = new URL(request.url ?? '/', 'http://localhost');
     if (!url.pathname.startsWith('/api/books')) {

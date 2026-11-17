@@ -26,7 +26,7 @@ export function createBookHistory(directory, chat) {
   }
 
   function newHistory() {
-    return { conversation: randomUUID(), session: '', turns: [] };
+    return { conversation: randomUUID(), turns: [] };
   }
 
   async function write(path, history) {
@@ -101,16 +101,18 @@ export function createBookHistory(directory, chat) {
         }
         const steps = new Map();
         turn.conversation = history.conversation;
-        const { session, workspaceId, ...reply } = await chat(id, input, history, (step) => {
+        const reply = await chat(id, input, history, (step) => {
           steps.set(step.id, step);
           onActivity?.(step);
         }, turn.controller.signal);
+        turn.controller.signal.throwIfAborted();
         if (steps.size) reply.activity = [...steps.values()].map((step) => step.status === 'running' ? { ...step, status: 'interrupted' } : step);
-        history.workspaceId = workspaceId;
-        history.session = session;
+        // Older histories can still be read; external agent state is no longer used.
+        delete history.workspaceId;
+        delete history.session;
         const index = history.turns.length;
         const passage = reply.reference ? { start: input.passage.start, end: input.passage.end, fromTitle: input.passage.fromTitle } : undefined;
-        history.turns.push({ requestId, question: input.question.trim(), passage, reply });
+        history.turns.push({ requestId, question: input.question.trim(), chapter: input.chapter, passage, reply });
 
         await write(path, history);
         return { ...reply, conversation: history.conversation, index };

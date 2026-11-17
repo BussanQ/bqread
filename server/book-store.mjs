@@ -1,4 +1,3 @@
-import { prepareBookFiles } from './book-files.mjs';
 import { randomUUID } from 'node:crypto';
 import { open, readFile, readdir, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -107,18 +106,11 @@ export function createBookStore(directory) {
         const summarySize = header.readUInt32BE(4);
         const indexSize = header.readUInt32BE(8);
         const dataStart = HEADER_BYTES + summarySize + indexSize;
-        const { size, ino, mtimeMs } = await file.stat();
+        const { size } = await file.stat();
         if (header.toString('ascii', 0, 4) !== MAGIC || dataStart > size) throw new Error('书籍索引不完整。');
         if (action === 'summary') return JSON.parse((await readBytes(file, HEADER_BYTES, summarySize)).toString());
         const index = JSON.parse((await readBytes(file, HEADER_BYTES + summarySize, indexSize)).toString());
         if (action === 'toc') return index.map(({ title, start, length }) => ({ title, start, length }));
-        if (action === 'agent-files') {
-          const book = JSON.parse((await readBytes(file, HEADER_BYTES, summarySize)).toString());
-          return await prepareBookFiles(directory, 'book-' + id, [ino, size, mtimeMs].join('-'), book, index, async (i) => {
-            const { offset, bytes } = index[i];
-            return (await readBytes(file, dataStart + offset, bytes)).toString();
-          });
-        }
         if (action === 'export') {
           const summary = JSON.parse((await readBytes(file, HEADER_BYTES, summarySize)).toString());
           const last = index.at(-1);
@@ -127,6 +119,10 @@ export function createBookStore(directory) {
         }
         if (!Number.isSafeInteger(center) || center < 0 || center >= index.length) {
           throw Object.assign(new Error('章节编号无效。'), { status: 400 });
+        }
+        if (action === 'chapter') {
+          const { offset, bytes } = index[center];
+          return (await readBytes(file, dataStart + offset, bytes)).toString();
         }
         const start = Math.max(0, center - 1);
         const entries = index.slice(start, center + 2);
