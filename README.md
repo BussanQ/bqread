@@ -74,7 +74,13 @@ BQREAD_DATA_DIR=/path/to/books npm start
 
 ## 阅读对话
 
-在阅读页点「对话」，或选中文字后点旁边的「对话」。墨读直接连接支持 **Chat Completions 工具调用**的模型服务，自行执行模型调用和查书循环，无需启动 bqagent。服务端只需三个连接参数：
+在首页打开「AI 提供商」，选择提供商，填写密钥并选择或输入支持工具调用的模型 ID。「保存并使用」后，下一轮书籍对话即使用该连接。可以保存多个连接，或切回服务端环境配置。模型候选来自 rakazo 使用的 Pi AI 1.6.0 目录，实际可用模型取决于供应商和账号权限。
+
+选择「自定义 API 服务」可以设置基础地址与协议。支持 OpenAI Chat Completions、OpenAI Responses 和 Anthropic Messages。所有使用同一私人书库的设备共用当前连接。
+
+墨读沿用 bqagent 的 AES-256-GCM 格式加密 API 密钥。密文保存在书库的 `settings/ai-providers.json`，本书库随机生成的主密钥保存在 `settings/.config.key`，两个文件的创建权限均为 `0600`。打开提供商设置或使用书籍对话时，墨读会自动将旧配置里的明文密钥转换为密文。迁移或恢复书库时请一并保管这两个文件，持有两者即可解密。
+
+也可通过环境变量配置 Chat Completions 服务：
 
 ```sh
 BQREAD_AI_BASE_URL='https://api.example.com/v1' \
@@ -83,7 +89,7 @@ BQREAD_AI_API_KEY='your-api-key' \
 npm start
 ```
 
-`npm run dev` 和 `npm run preview` 使用相同环境变量。`BQREAD_AI_MODEL` 必填；`BQREAD_AI_BASE_URL` 默认是 `https://api.openai.com/v1`，程序在其后追加 `/chat/completions`；无认证的本地模型服务可以省略 `BQREAD_AI_API_KEY`。密钥只在服务端使用。不使用 bqagent 的配置、登录或会话接口，旧的 `BQAGENT_URL`、`BQAGENT_WEBUI_PASSWORD` 不再生效。仅提供 Responses 或 Anthropic Messages 协议的地址不能直接用于此接口。
+`npm run dev` 和 `npm run preview` 使用相同环境变量。`BQREAD_AI_MODEL` 必填；`BQREAD_AI_BASE_URL` 默认是 `https://api.openai.com/v1`，程序在其后追加 `/chat/completions`；无认证的本地模型服务可以省略 `BQREAD_AI_API_KEY`。密钥只在服务端使用。不使用 bqagent 的配置、登录或会话接口，旧的 `BQAGENT_URL`、`BQAGENT_WEBUI_PASSWORD` 不再生效。Responses 和 Anthropic Messages 服务可通过首页设置连接。
 
 模型可自主分页读取本书目录、章节原文，搜索整本书的关键词，并调用字数统计工具。工具直接读取现有书库，不生成额外的原文副本，也不接受其他书籍或文件路径。选段由服务端按原文位置核对后提供给模型。右侧面板实时显示实际搜索词、查阅章节、统计操作和每一步的状态；回答完成后，点「查书过程」可回看记录。正文引文必须出现在本轮实际查阅的内容中；模型输出或引文有误时会获得一次修正机会，仍不符合要求则显示具体错误。
 

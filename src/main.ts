@@ -82,7 +82,7 @@ function progress(book: BookSummary): number {
 function header(): string {
   return `<header class="site-header"><div class="container header-inner">
     <button class="brand text-button" data-action="home" aria-label="墨读首页">${logo()}<span><span class="brand-name">墨读</span><span class="brand-subtitle">MO DU READER</span></span></button>
-    <nav class="main-nav" aria-label="主导航"><button class="nav-link title-3 active" aria-current="page" data-action="home">我的书架</button><button class="nav-link title-3" data-action="import">导入书籍</button><button class="nav-link title-3" data-action="help">阅读指南</button></nav>
+    <nav class="main-nav" aria-label="主导航"><button class="nav-link title-3 active" aria-current="page" data-action="home">我的书架</button><button class="nav-link title-3" data-action="import">导入书籍</button><button class="nav-link title-3" data-action="help">阅读指南</button><button class="nav-link title-3" data-action="providers">AI 提供商</button></nav>
     <div class="header-actions"><span class="local-status caption-5"><span class="status-dot"></span>私人书库，安心自在</span><button class="primary-button button-sm" data-action="import">${icon('plus')}导入小说</button></div>
   </div></header>`;
 }
@@ -536,6 +536,8 @@ app.addEventListener('click', (event) => {
     window.scrollTo({ top: 0, behavior: 'instant' });
   } else if (action === 'import') {
     openModal('import');
+  } else if (action === 'providers') {
+    void import('./provider-settings').then(({ openProviderSettings }) => openProviderSettings());
   } else if (action === 'help') {
     openModal('help');
   } else if (action === 'privacy') {

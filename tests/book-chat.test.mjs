@@ -360,3 +360,54 @@ test('model errors, truncated output, missing configuration and turn limits fail
     await assert.rejects(chat('sample-0', invalid), { status: 400 });
   }
 });
+
+test('saved connections drive Responses and Messages book lookups across restarts', async t => {
+  const directory = await library(t);
+  const received = [];
+  const upstream = await listen(async (req, res) => {
+    let raw = '';
+    for await (const chunk of req) raw += chunk;
+    const body = JSON.parse(raw);
+    received.push({ path: req.url, body, headers: req.headers });
+    const text = JSON.stringify({ scope: 'statistics' });
+    if (req.url === '/v1/responses') {
+      const next = body.input.at(-1).type === 'function_call_output';
+      res.end(JSON.stringify({ status: 'completed', output: next
+        ? [{ type: 'message', content: [{ type: 'output_text', text }] }]
+        : [{ type: 'reasoning', encrypted_content: 'opaque' }, { type: 'function_call', name: 'book_stats', call_id: 'stat', arguments: '{}' }] }));
+    } else {
+      const next = Array.isArray(body.messages.at(-1).content);
+      res.end(JSON.stringify({ stop_reason: next ? 'end_turn' : 'tool_use', content: next
+        ? [{ type: 'text', text }] : [{ type: 'tool_use', name: 'book_stats', id: 'stat', input: {} }] }));
+    }
+  }, t);
+  let base = await listen(createApiHandler({ directory }), t);
+  const update = async input => fetch(base + '/api/providers', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+  });
+  const ids = [];
+  for (const protocol of ['responses', 'anthropic-messages']) {
+    const saved = await update({ action: 'save', name: protocol, model: protocol, preset: 'custom',
+      protocol, baseURL: upstream + '/v1', apiKey: 'private-test' });
+    assert.equal(saved.status, 200);
+    const state = await saved.json();
+    ids.push(state.active);
+    assert.equal(state.profiles.at(-1).hasKey, true);
+    assert.ok(!JSON.stringify(state).includes('private-test'));
+    base = await listen(createApiHandler({ directory }), t);
+    assert.deepEqual(await (await fetch(base + '/api/providers')).json(), state);
+    const chat = await fetch(base + '/api/books/sample-0/chat', { method: 'POST', body: JSON.stringify({
+      chapter: 0, sample: true, question: '全书多少字？',
+    }) });
+    assert.equal(chat.status, 200);
+    assert.match((await chat.json()).answer, /汉字数/);
+  }
+  assert.deepEqual(received.map(r => r.path), ['/v1/responses', '/v1/responses', '/v1/messages', '/v1/messages']);
+  assert.equal(received[0].headers.authorization, 'Bearer private-test');
+  assert.equal(received[1].body.input.at(-1).call_id, 'stat');
+  assert.ok(received[1].body.input.some(x => x.encrypted_content === 'opaque'));
+  assert.equal(received[2].headers['x-api-key'], 'private-test');
+  assert.equal(received[3].body.messages.at(-1).content[0].tool_use_id, 'stat');
+  assert.equal((await (await update({ action: 'activate', id: ids[0] })).json()).active, ids[0]);
+  assert.equal((await (await update({ action: 'remove', id: ids[0] })).json()).profiles.length, 1);
+});

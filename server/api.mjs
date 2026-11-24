@@ -1,4 +1,5 @@
 import { createBookHistory } from './book-history.mjs';
+import { createProviders } from './providers.mjs';
 import { createBookChat } from './book-chat.mjs';
 import { mkdir } from 'node:fs/promises';
 import { createBookStore } from './book-store.mjs';
@@ -68,15 +69,23 @@ export function resolveBookDirectory(configured = process.env.BQREAD_DATA_DIR) {
 export function createApiHandler(options = {}) {
   const directory = resolveBookDirectory(options.directory);
   const store = createBookStore(directory);
-  const history = createBookHistory(directory, createBookChat(store, options.ai));
+  const providers = createProviders(directory, options.ai);
+  const history = createBookHistory(directory, createBookChat(store, { getConfig: providers.current }));
   return async function apiHandler(request, response, next) {
     const url = new URL(request.url ?? '/', 'http://localhost');
-    if (!url.pathname.startsWith('/api/books')) {
+    if (url.pathname !== '/api/providers' && !url.pathname.startsWith('/api/books')) {
       if (next) return next();
       return json(response, 404, { error: '接口不存在。' });
     }
 
     try {
+      if (url.pathname === '/api/providers') {
+        if (request.method === 'GET') return json(response, 200, await providers.list());
+        if (request.method === 'POST' && request.headers['content-type']?.split(';')[0] === 'application/json') {
+          return json(response, 200, await providers.update(JSON.parse(await requestBody(request, 16384))));
+        }
+        return json(response, 405, { error: '不支持这个操作。' });
+      }
       await mkdir(directory, { recursive: true, mode: 0o700 });
       const match = url.pathname.match(/^\/api\/books(?:\/([^/]+)(?:\/(export|toc|chapters|chat))?)?$/);
       if (!match) return json(response, 404, { error: '接口不存在。' });

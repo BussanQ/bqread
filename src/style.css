@@ -372,3 +372,12 @@ kbd { border: 1px solid #d7ddcb; border-radius: 4px; background: #fffefa; paddin
   body:has(.with-chat) { overflow: hidden; }
   .chat-history { padding: 18px 16px; }
 }
+
+.provider-dialog { margin: auto; width: min(540px, calc(100% - 28px)); color: var(--ink); }
+.provider-dialog::backdrop { background: #1d271c66; }
+.provider-dialog fieldset { border: 0; padding: 0; min-width: 0; }
+.provider-current { padding: 12px 14px; background: #edf0e5; border-radius: 8px; overflow-wrap: anywhere; }
+.provider-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.provider-dialog .field { font-size: 14px; min-width: 0; }
+.provider-dialog .footer-link { margin-top: 12px; }
+@media (max-width: 760px) { .main-nav { justify-content: space-between; gap: 4px; } }
