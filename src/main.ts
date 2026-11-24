@@ -1,6 +1,10 @@
 import { BookChatPanel } from './book-chat';
 import { escapeHTML } from './html';
 import './style.css';
+import './ui/lucian.css';
+import { emptyShelf, shelfSearch, type SearchSuggestion } from './ui/shelf-search';
+import { fontStepper, updateFontStepper } from './ui/font-stepper';
+import { importTabs, type ImportTab } from './ui/import-tabs';
 import { icon, logo } from './icons';
 import { chapterAt, createBook, decodeTextFile, titleFromFilename } from './parser';
 import { sampleBooks } from './samples';
@@ -22,7 +26,7 @@ let filter: ShelfFilter = 'all';
 let reader: ReaderState | null = null;
 let chat: BookChatPanel | null = null;
 let modal: ModalName = null;
-let importTab: 'file' | 'paste' = 'file';
+let importTab: ImportTab = 'file';
 let importFile: File | null = null;
 let importTitle = '';
 let importAuthor = '';
@@ -30,7 +34,7 @@ let pasteText = '';
 let importError = '';
 let importing = false;
 let deleteId: string | null = null;
-let previousFocus: HTMLElement | null = null;
+let restoreFocus: (() => void) | undefined;
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 let scrollFrame: number | null = null;
@@ -106,11 +110,11 @@ function heroArt(): string {
   </svg><div class="hero-stamp"><span>慢读</span><span>时光</span></div></div>`;
 }
 
-function filteredBooks(): BookSummary[] {
+function filteredBooks(text = search, status = filter): BookSummary[] {
+  const query = text.trim().toLocaleLowerCase();
   return books.filter((book) => {
-    if (filter === 'reading' && progress(book) === 0) return false;
-    if (filter === 'unread' && progress(book) > 0) return false;
-    const query = search.trim().toLocaleLowerCase();
+    if (status === 'reading' && progress(book) === 0) return false;
+    if (status === 'unread' && progress(book) > 0) return false;
     return !query || `${book.title} ${book.author}`.toLocaleLowerCase().includes(query);
   });
 }
@@ -126,11 +130,19 @@ function bookCard(book: BookSummary): string {
 function bookResults(): string {
   const visible = filteredBooks();
   const cards = visible.map(bookCard).join('');
-  if (filter === 'all' && !search) {
+  if (filter === 'all' && !search.trim()) {
     return `${cards}<button class="add-book-card" data-action="import"><span class="add-icon">${icon('plus')}</span><span class="title-3">添一本新书</span><span class="caption-5">让新的故事，在这里发生</span></button>`;
   }
   if (!cards) {
-    return `<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">${icon(search ? 'search' : 'book')}</div><h3 class="title-2">${search ? '没有找到这本书' : '这里还没有书籍'}</h3><p class="body-3">${search ? '换个书名或作者试试看。' : '导入一本喜欢的小说，开始你的阅读时光。'}</p><button class="secondary-button button-sm" data-action="${search ? 'clear-search' : 'import'}">${search ? '清除搜索' : '导入小说'}</button></div>`;
+    const suggestions: SearchSuggestion[] = [];
+    const withoutQuery = search.trim() ? filteredBooks('').length : 0;
+    const acrossShelf = filter !== 'all' ? filteredBooks(search, 'all').length : 0;
+    if (acrossShelf) suggestions.push({ label: '在全部书籍中查看', action: 'all-books', count: acrossShelf });
+    if (withoutQuery) suggestions.push({ label: '清除搜索词', action: 'clear-search', count: withoutQuery });
+    if (!suggestions.length && books.length) {
+      suggestions.push({ label: '清空条件，查看全部书籍', action: 'reset-search', count: books.length });
+    }
+    return emptyShelf(Boolean(search.trim()), suggestions);
   }
   return cards;
 }
@@ -141,7 +153,7 @@ function shelf(): string {
   return `<main id="main-content" class="container">
     <section class="hero" aria-labelledby="hero-title"><div class="hero-copy"><p class="hero-eyebrow eyebrow">留一点时间，给自己</p><h1 id="hero-title"><span>把时光，</span><span>读成喜欢的样子。</span></h1><p class="hero-description">在文字里慢下来，在故事里，<br>遇见另一个自己。</p></div>${heroArt()}</section>
     <section class="library-summary" aria-label="书架概览"><div class="summary-item"><span class="summary-icon">${icon('book')}</span><div class="summary-text"><strong>${books.length}</strong><span>本藏书</span></div></div><div class="summary-separator"></div><div class="summary-item"><span class="summary-icon">${icon('clock')}</span><div class="summary-text"><strong>${readCount}</strong><span>本在读</span></div></div><div class="summary-separator"></div><div class="summary-item"><span class="summary-icon">${icon('file')}</span><div class="summary-text"><strong>${chapters}</strong><span>个章节</span></div></div><div class="summary-note caption-5">${icon('leaf')}今天，也给自己一页安静。</div></section>
-    <section class="shelf-section" aria-labelledby="shelf-title"><div class="shelf-heading"><div class="shelf-title-group"><h2 class="shelf-title" id="shelf-title">我的书架</h2><span class="book-count" id="book-count">${books.length} 本</span></div><label class="search-box">${icon('search')}<input id="book-search" type="search" placeholder="搜索书名或作者" aria-label="搜索书名或作者" value="${escapeHTML(search)}"></label></div>
+    <section class="shelf-section" aria-labelledby="shelf-title"><div class="shelf-heading"><div class="shelf-title-group"><h2 class="shelf-title" id="shelf-title">我的书架</h2><span class="book-count" id="book-count" role="status">${resultCount()}</span></div>${shelfSearch(search)}</div>
     <div class="filter-row" role="group" aria-label="按阅读状态筛选"><button class="filter-button title-4 ${filter === 'all' ? 'active' : ''}" data-action="filter" data-filter="all" aria-pressed="${filter === 'all'}">全部书籍 <span class="filter-count">${books.length}</span></button><button class="filter-button title-4 ${filter === 'reading' ? 'active' : ''}" data-action="filter" data-filter="reading" aria-pressed="${filter === 'reading'}">正在阅读 <span class="filter-count">${readCount}</span></button><button class="filter-button title-4 ${filter === 'unread' ? 'active' : ''}" data-action="filter" data-filter="unread" aria-pressed="${filter === 'unread'}">尚未开始 <span class="filter-count">${books.length - readCount}</span></button></div>
     <div class="book-grid" id="book-grid">${bookResults()}</div></section>
     <footer class="shelf-footer"><p class="footer-note caption-5">${icon('shield')}书籍保存在服务端 ~/.bqread，阅读进度保存在当前浏览器。</p><div class="footer-links"><button class="footer-link caption-5" data-action="privacy">关于书籍存储</button><button class="footer-link caption-5" data-action="help">使用帮助</button></div></footer>
@@ -179,9 +191,28 @@ function readerDrawer(book: BookSummary): string {
     return `<aside class="reader-drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title"><div class="drawer-header"><h2 class="drawer-title" id="drawer-title">目录</h2><button class="icon-button" data-action="close-drawer" aria-label="关闭目录">${icon('close')}</button></div><p class="drawer-subtitle body-3">共 ${book.chapterCount} 章 · 已读 ${progress(book)}%</p><ol class="chapter-list">${reader.chapters.map((chapter, index) => `<li><button class="chapter-link title-4 ${index === reader!.chapterIndex ? 'active' : ''}" data-action="chapter" data-chapter="${index}" ${index === reader!.chapterIndex ? 'aria-current="location"' : ''}><span class="chapter-number">${String(index + 1).padStart(2, '0')}</span><span>${escapeHTML(chapter.title)}</span></button></li>`).join('')}</ol></aside>`;
   }
   if (reader?.drawer === 'settings') {
-    return `<aside class="reader-drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title"><div class="drawer-header"><h2 class="drawer-title" id="drawer-title">阅读设置</h2><button class="icon-button" data-action="close-drawer" aria-label="关闭阅读设置">${icon('close')}</button></div><section class="setting-section"><span class="setting-label title-4">阅读主题</span><div class="theme-options">${(['paper', 'sage', 'night'] as const).map((theme) => `<button class="theme-option caption-4 ${settings.theme === theme ? 'active' : ''}" data-action="theme" data-theme="${theme}" aria-pressed="${settings.theme === theme}"><span class="theme-swatch ${theme}">${icon(theme === 'night' ? 'moon' : 'sun')}</span>${{ paper: '暖纸白', sage: '护眼绿', night: '静谧夜' }[theme]}</button>`).join('')}</div></section><section class="setting-section"><span class="setting-label title-4">正文字号</span><div class="font-controls"><button class="icon-button" data-action="font" data-direction="smaller" aria-label="减小字号" ${settings.fontSize === 16 ? 'disabled' : ''}>${icon('left')}</button><span class="font-size-value" id="font-size-value">${settings.fontSize}</span><button class="icon-button" data-action="font" data-direction="larger" aria-label="增大字号" ${settings.fontSize === 20 ? 'disabled' : ''}>${icon('right')}</button></div></section><p class="setting-tip caption-2">设置会自动保存在当前浏览器。阅读时，使用键盘左右方向键也可以切换章节。</p></aside>`;
+    return `<aside class="reader-drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title"><div class="drawer-header"><h2 class="drawer-title" id="drawer-title">阅读设置</h2><button class="icon-button" data-action="close-drawer" aria-label="关闭阅读设置">${icon('close')}</button></div><section class="setting-section"><span class="setting-label title-4">阅读主题</span><div class="theme-options">${(['paper', 'sage', 'night'] as const).map((theme) => `<button class="theme-option caption-4 ${settings.theme === theme ? 'active' : ''}" data-action="theme" data-theme="${theme}" aria-pressed="${settings.theme === theme}"><span class="theme-swatch ${theme}">${icon(theme === 'night' ? 'moon' : 'sun')}</span>${{ paper: '暖纸白', sage: '护眼绿', night: '静谧夜' }[theme]}</button>`).join('')}</div></section><section class="setting-section"><span class="setting-label title-4">正文字号</span>${fontStepper(settings.fontSize)}</section><p class="setting-tip caption-2">设置会自动保存在当前浏览器。阅读时，使用键盘左右方向键也可以切换章节。</p></aside>`;
   }
   return '';
+}
+
+function importFields(): string {
+  const fileTab = importTab === 'file';
+  const source = fileTab ? `
+    <label class="drop-zone" id="drop-zone">
+      <input class="file-input" type="file" id="novel-file" aria-label="选择 TXT 文件" accept=".txt,text/plain">
+      <span class="upload-icon">${icon('upload')}</span>
+      <strong class="title-3">${importFile ? escapeHTML(importFile.name) : '选择或拖入 TXT 文件'}</strong>
+      <span class="caption-5">支持 TXT 格式，最大 10 MB</span>
+    </label>
+    <p class="import-note caption-5">${icon('shield')}文件将保存到运行墨读的服务端 ~/.bqread 文件夹</p>` : `
+    <div class="field"><label class="field-label" for="paste-text">小说正文</label>
+      <textarea class="text-area body-3" id="paste-text" placeholder="把小说文本粘贴到这里……">${escapeHTML(pasteText)}</textarea></div>`;
+  return `${source}
+    <div class="field"><label class="field-label" for="import-title">书名</label>
+      <input class="text-input body-3" id="import-title" maxlength="100" placeholder="${fileTab ? '选择文件后自动填入' : '给这个故事一个名字'}" value="${escapeHTML(importTitle)}"></div>
+    <div class="field"><label class="field-label" for="import-author">作者 <span class="optional">选填</span></label>
+      <input class="text-input body-3" id="import-author" maxlength="50" placeholder="佚名" value="${escapeHTML(importAuthor)}"></div>`;
 }
 
 function modalView(): string {
@@ -196,8 +227,8 @@ function modalView(): string {
     const book = books.find((item) => item.id === deleteId);
     return `<div class="modal-backdrop" data-action="backdrop-close"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="modal-header"><h2 class="modal-title" id="modal-title">从书架移除这本书？</h2><button class="icon-button modal-close" data-action="close-modal" aria-label="取消移除">${icon('close')}</button></div><p class="delete-warning body-3">《${escapeHTML(book?.title ?? '')}》的正文将从服务端删除，当前浏览器的阅读进度也会移除，原始 TXT 文件不会受到影响。</p><div class="modal-actions"><button class="secondary-button button-sm" data-action="close-modal">保留书籍</button><button class="primary-button button-sm" data-action="confirm-delete">确认移除</button></div></section></div>`;
   }
-  return `<div class="modal-backdrop" data-action="backdrop-close"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="modal-header"><div><h2 class="modal-title" id="modal-title">带一个新故事来</h2><p class="modal-description body-3">本地导入，自在阅读</p></div><button class="icon-button modal-close" data-action="close-modal" aria-label="关闭导入窗口">${icon('close')}</button></div><div class="import-tabs" role="tablist" aria-label="导入方式"><button class="import-tab button-sm ${importTab === 'file' ? 'active' : ''}" data-action="import-tab" data-tab="file" role="tab" aria-selected="${importTab === 'file'}">${icon('file')}选择文件</button><button class="import-tab button-sm ${importTab === 'paste' ? 'active' : ''}" data-action="import-tab" data-tab="paste" role="tab" aria-selected="${importTab === 'paste'}">${icon('paste')}粘贴文本</button></div>
-  ${importTab === 'file' ? `<label class="drop-zone" id="drop-zone" for="novel-file"><span class="upload-icon">${icon('upload')}</span><strong class="title-3">${importFile ? escapeHTML(importFile.name) : '点击选择，或将 TXT 文件拖到这里'}</strong><span class="caption-5">支持 TXT 格式，最大 10 MB</span></label><input class="file-input" type="file" id="novel-file" accept=".txt,text/plain"><p class="import-note caption-5">${icon('shield')}文件将保存到运行墨读的服务端 ~/.bqread 文件夹</p><div class="field"><label class="field-label" for="import-title">书名</label><input class="text-input body-3" id="import-title" maxlength="100" placeholder="选择文件后自动填入" value="${escapeHTML(importTitle)}"></div><div class="field"><label class="field-label" for="import-author">作者 <span class="optional">选填</span></label><input class="text-input body-3" id="import-author" maxlength="50" placeholder="佚名" value="${escapeHTML(importAuthor)}"></div>` : `<div class="field"><label class="field-label" for="paste-text">小说正文</label><textarea class="text-area body-3" id="paste-text" placeholder="把小说文本粘贴到这里……">${escapeHTML(pasteText)}</textarea></div><div class="field"><label class="field-label" for="import-title">书名</label><input class="text-input body-3" id="import-title" maxlength="100" placeholder="给这个故事一个名字" value="${escapeHTML(importTitle)}"></div><div class="field"><label class="field-label" for="import-author">作者 <span class="optional">选填</span></label><input class="text-input body-3" id="import-author" maxlength="50" placeholder="佚名" value="${escapeHTML(importAuthor)}"></div>`}
+  return `<div class="modal-backdrop" data-action="backdrop-close"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="modal-header"><div><h2 class="modal-title" id="modal-title">带一个新故事来</h2><p class="modal-description body-3">本地导入，自在阅读</p></div><button class="icon-button modal-close" data-action="close-modal" aria-label="关闭导入窗口">${icon('close')}</button></div>${importTabs(importTab)}
+  <div id="import-panel" role="tabpanel" aria-labelledby="import-tab-${importTab}">${importFields()}</div>
   ${importError ? `<p class="form-error body-3" role="alert">${escapeHTML(importError)}</p>` : ''}<div class="modal-actions"><button class="secondary-button button-sm" data-action="close-modal" ${importing ? 'disabled' : ''}>取消</button><button class="primary-button button-sm" data-action="submit-import" ${importing ? 'disabled' : ''}>${icon(importing ? 'clock' : 'upload')}${importing ? '正在整理书籍' : '加入书架'}</button></div></section></div>`;
 }
 
@@ -238,11 +269,26 @@ function chapterScroll(ratio: number): number {
   return main.offsetTop + Math.max(0, main.scrollHeight - window.innerHeight + 160) * Math.min(1, Math.max(0, ratio));
 }
 
+function setShelfFilter(value: ShelfFilter): void {
+  filter = value;
+  for (const element of app.querySelectorAll<HTMLElement>('.filter-button')) {
+    const active = element.dataset.filter === filter;
+    element.classList.toggle('active', active);
+    element.setAttribute('aria-pressed', String(active));
+  }
+}
+
+function resultCount(): string {
+  return search.trim() || filter !== 'all' ? `${filteredBooks().length} / ${books.length} 本` : `${books.length} 本`;
+}
+
 function updateResults(): void {
   const grid = document.querySelector('#book-grid');
   if (grid) grid.innerHTML = bookResults();
   const count = document.querySelector('#book-count');
-  if (count) count.textContent = `${search ? `${filteredBooks().length} / ` : ''}${books.length} 本`;
+  if (count) count.textContent = resultCount();
+  const clear = app.querySelector<HTMLButtonElement>('.u092-x');
+  if (clear) clear.hidden = !search;
 }
 
 function showToast(message: string): void {
@@ -251,8 +297,16 @@ function showToast(message: string): void {
   toastTimer = setTimeout(() => { toastRegion.innerHTML = ''; }, 3600);
 }
 
-function openModal(name: ModalName): void {
-  previousFocus = document.activeElement as HTMLElement;
+function rememberOpener(button: HTMLElement): void {
+  // Rendering replaces the opener. Locate its counterpart using the same action and book.
+  const selector = `[data-action="${CSS.escape(button.dataset.action!)}"]`
+    + (button.dataset.id ? `[data-id="${CSS.escape(button.dataset.id)}"]` : '');
+  const index = [...app.querySelectorAll(selector)].indexOf(button);
+  restoreFocus = () => app.querySelectorAll<HTMLElement>(selector)[index]?.focus({ preventScroll: true });
+}
+
+function openModal(name: ModalName, opener: HTMLElement): void {
+  rememberOpener(opener);
   modal = name;
   importError = '';
   if (name === 'import' && !importFile) {
@@ -266,7 +320,7 @@ function closeModal(): void {
   modal = null;
   importError = '';
   render();
-  previousFocus?.focus();
+  restoreFocus?.();
 }
 
 function saveSettings(): void {
@@ -535,13 +589,13 @@ app.addEventListener('click', (event) => {
     render();
     window.scrollTo({ top: 0, behavior: 'instant' });
   } else if (action === 'import') {
-    openModal('import');
+    openModal('import', button);
   } else if (action === 'providers') {
     void import('./provider-settings').then(({ openProviderSettings }) => openProviderSettings());
   } else if (action === 'help') {
-    openModal('help');
+    openModal('help', button);
   } else if (action === 'privacy') {
-    openModal('privacy');
+    openModal('privacy', button);
   } else if (action === 'close-modal') {
     closeModal();
   } else if (action === 'read') {
@@ -559,7 +613,7 @@ app.addEventListener('click', (event) => {
     }
   } else if (action === 'delete') {
     deleteId = button.dataset.id ?? null;
-    openModal('delete');
+    openModal('delete', button);
   } else if (action === 'confirm-delete') {
     const id = deleteId;
     if (id) {
@@ -576,27 +630,43 @@ app.addEventListener('click', (event) => {
       });
     }
   } else if (action === 'filter') {
-    filter = button.dataset.filter as ShelfFilter;
-    document.querySelectorAll('.filter-button').forEach((element) => {
-      const active = (element as HTMLElement).dataset.filter === filter;
-      element.classList.toggle('active', active);
-      element.setAttribute('aria-pressed', String(active));
-    });
+    setShelfFilter(button.dataset.filter as ShelfFilter);
     updateResults();
-  } else if (action === 'clear-search') {
-    search = '';
+  } else if (action === 'clear-search' || action === 'all-books' || action === 'reset-search') {
     const input = document.querySelector<HTMLInputElement>('#book-search');
-    if (input) input.value = '';
+    if (action !== 'all-books') {
+      search = '';
+      if (input) input.value = '';
+    }
+    if (action !== 'clear-search') setShelfFilter('all');
     updateResults();
     input?.focus();
   } else if (action === 'import-tab') {
+    if (button.dataset.tab === importTab || importing) return;
     syncImportFields();
-    importTab = button.dataset.tab as 'file' | 'paste';
+    importTab = button.dataset.tab as ImportTab;
+    const tabs = button.parentElement!;
+    tabs.dataset.selected = importTab;
+    for (const tab of tabs.querySelectorAll<HTMLButtonElement>('[role="tab"]')) {
+      tab.setAttribute('aria-selected', String(tab === button));
+      tab.tabIndex = tab === button ? 0 : -1;
+    }
+    const panel = document.getElementById('import-panel')!;
+    panel.setAttribute('aria-labelledby', button.id);
+    panel.innerHTML = importFields();
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      Array.from(panel.children).forEach((field, index) => {
+        field.animate([
+          { transform: `translateX(${importTab === 'paste' ? 70 : -70}%)`, opacity: 0 },
+          { transform: 'translateX(0)', opacity: 1 },
+        ], { duration: 550, delay: index * 45, easing: 'cubic-bezier(.34,1.45,.64,1)', fill: 'backwards' });
+      });
+    }
     importError = '';
-    render();
+    panel.parentElement?.querySelector('.form-error')?.remove();
+    button.focus();
   } else if (action === 'submit-import') {
     if (importTab === 'file' && !importFile) {
-    importError = '请先选择一个 TXT 文件。';
       importError = '请先选择一个 TXT 文件。';
       syncImportFields();
       render();
@@ -624,14 +694,14 @@ app.addEventListener('click', (event) => {
     void chat.loadHistory();
   } else if (action === 'contents' || action === 'settings') {
     const drawer = action === 'contents' ? 'contents' : 'settings';
-    if (!reader!.drawer) previousFocus = document.activeElement as HTMLElement;
+    if (!reader!.drawer) rememberOpener(button);
     reader!.drawer = reader!.drawer === drawer ? null : drawer;
     render();
-    if (!reader!.drawer) previousFocus?.focus();
+    if (!reader!.drawer) restoreFocus?.();
   } else if (action === 'close-drawer') {
     reader!.drawer = null;
     render();
-    previousFocus?.focus();
+    restoreFocus?.();
   } else if (action === 'previous') {
     void goToChapter((pendingChapter ?? reader!.chapterIndex) - 1);
   } else if (action === 'next') {
@@ -648,13 +718,16 @@ app.addEventListener('click', (event) => {
     });
     saveSettings();
   } else if (action === 'font') {
-    settings.fontSize = Math.min(20, Math.max(16, settings.fontSize + (button.dataset.direction === 'larger' ? 2 : -2))) as FontSize;
+    const step = button.closest<HTMLElement>('.u018-step')!;
+    if (button.getAttribute('aria-disabled') === 'true') {
+      step.classList.remove('is-shake');
+      void step.offsetWidth;
+      step.classList.add('is-shake');
+      return;
+    }
+    settings.fontSize = (settings.fontSize + (button.dataset.direction === 'larger' ? 2 : -2)) as FontSize;
     document.querySelector('.reading-content')?.setAttribute('data-font', String(settings.fontSize));
-    const label = document.querySelector('#font-size-value');
-    if (label) label.textContent = String(settings.fontSize);
-    document.querySelectorAll<HTMLButtonElement>('[data-action="font"]').forEach((control) => {
-      control.disabled = control.dataset.direction === 'smaller' ? settings.fontSize === 16 : settings.fontSize === 20;
-    });
+    updateFontStepper(step, settings.fontSize);
     saveSettings();
     requestAnimationFrame(recordScroll);
   }
@@ -713,7 +786,21 @@ document.addEventListener('visibilitychange', () => {
 });
 
 window.addEventListener('keydown', (event) => {
-  if ((event.target as HTMLElement).id === 'chat-input' && event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
+  const target = event.target as HTMLElement;
+  if (target.matches('[data-action="import-tab"]') && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+    event.preventDefault();
+    const tab = event.key === 'Home' ? 'file' : event.key === 'End' ? 'paste' : importTab === 'file' ? 'paste' : 'file';
+    document.getElementById(`import-tab-${tab}`)?.click();
+    return;
+  }
+  const step = target.closest('.u018-step');
+  if (step && ['ArrowLeft', 'ArrowDown', 'ArrowRight', 'ArrowUp'].includes(event.key)) {
+    event.preventDefault();
+    const direction = event.key === 'ArrowUp' || event.key === 'ArrowRight' ? 'larger' : 'smaller';
+    step.querySelector<HTMLButtonElement>(`[data-direction="${direction}"]`)?.click();
+    return;
+  }
+  if (target.id === 'chat-input' && event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
     event.preventDefault();
     document.querySelector<HTMLFormElement>('#chat-form')?.requestSubmit();
     return;
@@ -723,7 +810,7 @@ window.addEventListener('keydown', (event) => {
     else if (reader?.drawer) {
       reader.drawer = null;
       render();
-      previousFocus?.focus();
+      restoreFocus?.();
     } else if (chat?.open) {
       chat.open = false;
       render();

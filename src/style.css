@@ -94,10 +94,6 @@ button svg { flex-shrink: 0; }
 .shelf-title-group { display: flex; align-items: center; gap: 12px; }
 .shelf-title { font-size: 24px; line-height: 32px; font-weight: 600; margin: 0; }
 .book-count { font-size: 12px; line-height: 16px; color: #868c7e; background: #ebede4; border-radius: 4px; padding: 4px 8px; }
-.search-box { width: 224px; display: flex; align-items: center; gap: 8px; background: #f1f1eb; padding: 8px 12px; border: 1px solid transparent; border-radius: 8px; color: #8d9184; }
-.search-box:focus-within { border-color: #8e9e7c; background: var(--white); }
-.search-box input { min-width: 0; width: 100%; border: none; outline: 0; background: transparent; font-size: 14px; line-height: 20px; color: var(--ink); }
-.search-box input::placeholder { color: #9c9f95; }
 .filter-row { margin: 24px 0; border-bottom: 1px solid var(--line); display: flex; gap: 32px; }
 .filter-button { padding: 0 0 12px; border: 0; background: transparent; position: relative; color: #8c9085; display: flex; align-items: center; gap: 8px; }
 .filter-button.active { color: var(--green); }
@@ -139,10 +135,6 @@ button svg { flex-shrink: 0; }
 .add-book-card:hover { border-color: #8b9a7b; background: #f0f2e9; }
 .add-icon { width: 48px; height: 48px; border: 1px solid #d9dece; border-radius: 50%; display: grid; place-items: center; margin-bottom: 4px; }
 .add-book-card .caption-5 { color: #a3a799; }
-.empty-state { text-align: center; border: 1px dashed #ccd2c0; border-radius: 16px; padding: 64px 24px; color: #89917c; }
-.empty-state .empty-icon { width: 64px; height: 64px; border-radius: 50%; background: #ecefe4; display: grid; place-items: center; margin: 0 auto 16px; }
-.empty-state h3 { color: var(--ink); margin: 0; }
-.empty-state p { margin: 8px 0 24px; }
 .shelf-footer { margin-top: 48px; padding: 24px 0 32px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; gap: 24px; }
 .footer-note { color: #919789; display: flex; gap: 8px; align-items: center; }
 .footer-links { display: flex; gap: 24px; }
@@ -155,15 +147,13 @@ button svg { flex-shrink: 0; }
 .modal-title { margin: 0; font-size: 24px; line-height: 32px; font-weight: 600; }
 .modal-description { color: #888e7e; margin: 8px 0 0; }
 .modal-close { margin: -8px -8px 0 0; }
-.import-tabs { display: flex; gap: 8px; background: #eeefe7; padding: 4px; border-radius: 8px; margin: 24px 0; }
-.import-tab { flex: 1; padding: 8px 12px; border: 0; border-radius: 4px; color: #8a8f80; background: transparent; display: flex; align-items: center; justify-content: center; gap: 8px; }
-.import-tab.active { color: var(--green); background: #fffefa; box-shadow: 0 2px 4px #27302308; }
-.drop-zone { width: 100%; border: 1px dashed #b6bfaa; background: #f0f2e9; border-radius: 8px; padding: 32px 24px; display: flex; flex-direction: column; align-items: center; gap: 12px; color: #758169; }
+.drop-zone { position: relative; width: 100%; border: 1px dashed #b6bfaa; background: #f0f2e9; border-radius: 8px; padding: 32px 24px; display: flex; flex-direction: column; align-items: center; gap: 12px; color: #758169; }
 .drop-zone:hover, .drop-zone.dragging { background: #e7ecdd; border-color: #5f7950; }
 .drop-zone .upload-icon { width: 48px; height: 48px; display: grid; place-items: center; background: #e2e8d7; border-radius: 50%; }
-.drop-zone strong { color: #516446; font-weight: 500; }
+.drop-zone strong { text-align: center; overflow-wrap: anywhere; max-width: 100%; color: #516446; font-weight: 500; }
 .drop-zone .caption-5 { color: #929b85; }
-.file-input { display: none; }
+.drop-zone:focus-within { outline: 2px solid var(--green); outline-offset: 3px; }
+.file-input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
 .import-note { color: #9a9f8e; margin: 12px 0 0; display: flex; align-items: center; gap: 8px; }
 .field { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
 .field-label { font-size: 14px; line-height: 20px; font-weight: 500; color: #59634f; }
@@ -239,9 +229,6 @@ kbd { border: 1px solid #d7ddcb; border-radius: 4px; background: #fffefa; paddin
 .theme-swatch.paper { background: #f5f2e9; color: #5d6455; border-color: #d8d8c7; }
 .theme-swatch.sage { background: #e8eddf; color: #617051; }
 .theme-swatch.night { background: #272727; color: #b3baa5; }
-.font-controls { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border: 1px solid color-mix(in srgb, var(--reader-muted) 30%, transparent); border-radius: 8px; }
-.font-controls .icon-button { color: var(--reader-ink); }
-.font-size-value { font-size: 20px; line-height: 28px; }
 .setting-tip { color: var(--reader-muted); padding: 16px; border: 1px solid color-mix(in srgb, var(--reader-muted) 25%, transparent); border-radius: 8px; }
 .reader-scrim { position: fixed; inset: 0; z-index: 40; background: #18201544; backdrop-filter: blur(2px); }
 
@@ -290,8 +277,6 @@ kbd { border: 1px solid #d7ddcb; border-radius: 4px; background: #fffefa; paddin
   .shelf-heading { gap: 16px; }
   .shelf-title { font-size: 20px; line-height: 28px; }
   .shelf-title-group { gap: 8px; }
-  .search-box { width: 40px; padding: 8px; }
-  .search-box:focus-within { position: absolute; width: calc(100% - 32px); right: 16px; z-index: 2; }
   .filter-row { gap: 24px; margin-top: 16px; }
   .book-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 16px; }
   .book-cover { height: 248px; padding: 24px 16px; }
@@ -373,11 +358,4 @@ kbd { border: 1px solid #d7ddcb; border-radius: 4px; background: #fffefa; paddin
   .chat-history { padding: 18px 16px; }
 }
 
-.provider-dialog { margin: auto; width: min(540px, calc(100% - 28px)); color: var(--ink); }
-.provider-dialog::backdrop { background: #1d271c66; }
-.provider-dialog fieldset { border: 0; padding: 0; min-width: 0; }
-.provider-current { padding: 12px 14px; background: #edf0e5; border-radius: 8px; overflow-wrap: anywhere; }
-.provider-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.provider-dialog .field { font-size: 14px; min-width: 0; }
-.provider-dialog .footer-link { margin-top: 12px; }
 @media (max-width: 760px) { .main-nav { justify-content: space-between; gap: 4px; } }

@@ -406,3 +406,155 @@ test('uses a body selection as the reference for one chat turn', async ({ page }
   await page.getByRole('button', { name: '下一章', exact: true }).click();
   await expect(preview).toBeHidden();
 });
+
+test('recovers filtered searches and operates import tabs and font size by keyboard at 375px', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/');
+  const search = page.getByRole('searchbox');
+  await search.fill('岛屿');
+  await page.getByRole('button', { name: /正在阅读/ }).click();
+  await expect(page.locator('#book-count')).toHaveText('0 / 3 本');
+  const suggestion = page.getByRole('button', { name: '在全部书籍中查看 1 本' });
+  await suggestion.focus();
+  await page.keyboard.press('Enter');
+  await expect(search).toBeFocused();
+  await expect(search).toHaveValue('岛屿');
+  await expect(page.locator('.book-item')).toHaveCount(1);
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: '清除搜索', exact: true })).toBeFocused();
+  await page.keyboard.press('Space');
+  await expect(search).toHaveValue('');
+  await expect(page.locator('.book-item')).toHaveCount(3);
+
+  await page.getByRole('button', { name: '导入小说', exact: true }).click();
+  await expect(page.getByRole('button', { name: '关闭导入窗口' })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('tab', { name: '选择文件' })).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByRole('tab', { name: '粘贴文本', selected: true })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.locator('#paste-text')).toBeFocused();
+  await page.locator('#paste-text').fill('第一章 草稿');
+  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('Tab');
+  await expect(page.locator('#novel-file')).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('End');
+  await expect(page.locator('#paste-text')).toHaveValue('第一章 草稿');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button', { name: '导入小说', exact: true })).toBeFocused();
+
+  await page.locator('.book-open').first().click();
+  await page.getByRole('button', { name: '阅读设置', exact: true }).click();
+  for (const theme of ['护眼绿', '静谧夜', '暖纸白']) {
+    await page.getByRole('button', { name: theme, exact: true }).click();
+    const plus = page.getByRole('button', { name: '增大字号' });
+    await plus.focus();
+    await page.keyboard.press('ArrowUp');
+    await expect(plus).toBeDisabled();
+    await expect(page.locator('.reading-content')).toHaveAttribute('data-font', '20');
+    await page.keyboard.press('ArrowRight');
+    await expect(page.locator('.u018-sr')).toHaveText('20 像素');
+    await page.keyboard.press('ArrowLeft');
+    await expect(page.locator('.u018-sr')).toHaveText('18 像素');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+});
+
+test('manages AI provider connections with the keyboard and mobile controls', async ({ page, request }) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'light' });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'AI 提供商', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'AI 提供商' });
+  const preset = dialog.getByRole('button', { name: /^提供商 / });
+  await preset.focus();
+  await page.keyboard.press('Space');
+  await page.keyboard.press('d');
+  await page.keyboard.press('Enter');
+  await expect(preset).toBeFocused();
+  await expect(dialog.getByLabel('连接名称')).toHaveValue('DeepSeek');
+  await expect(dialog.getByLabel('API 基础地址')).toHaveValue('https://api.deepseek.com');
+  const protocol = dialog.getByRole('button', { name: /^API 协议 / });
+  await protocol.click();
+  await page.keyboard.press('Escape');
+  await expect(protocol).toBeFocused();
+  await expect(dialog).toBeVisible();
+
+  const model = dialog.getByRole('combobox', { name: '模型', exact: true });
+  await model.fill('deepseek');
+  await model.press('ArrowDown');
+  await model.press('Enter');
+  await expect(model).toHaveValue('deepseek-flash');
+  const secret = dialog.getByLabel('API 密钥', { exact: true });
+  await secret.fill('test-credential');
+  const reveal = dialog.getByRole('button', { name: '显示 API 密钥' });
+  await reveal.click();
+  await expect(secret).toHaveAttribute('type', 'text');
+  await reveal.click();
+  await expect(secret).toHaveAttribute('type', 'password');
+  const save = dialog.getByRole('button', { name: '保存并使用' });
+  await save.click();
+  await expect(dialog.locator('.provider-current strong')).toHaveText('DeepSeek · deepseek-flash');
+  await expect(secret).toHaveValue('');
+  await expect(dialog.locator('#provider-key-hint')).toContainText('留空沿用');
+
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect(dialog).toHaveCSS('color-scheme', 'dark');
+  expect(await dialog.evaluate(el => el.scrollWidth <= el.clientWidth && el.getBoundingClientRect().right <= innerWidth)).toBe(true);
+  await dialog.getByLabel('连接名称').fill('测试连接');
+  await model.fill('custom-model');
+  await save.click();
+  await expect(dialog.locator('.provider-current strong')).toHaveText('测试连接 · custom-model');
+  expect((await (await request.get('/api/providers')).json()).profiles).toEqual([
+    expect.objectContaining({ name: '测试连接', model: 'custom-model', hasKey: true }),
+  ]);
+
+  await dialog.getByRole('button', { name: '使用服务端环境配置' }).click();
+  const connection = dialog.getByRole('button', { name: /^已保存的连接 / });
+  await expect(connection).toContainText('添加新连接');
+  await connection.click();
+  await dialog.getByRole('option', { name: '测试连接 custom-model' }).click();
+  await dialog.getByRole('button', { name: '移除连接' }).click();
+  await expect(connection).toContainText('添加新连接');
+  expect((await (await request.get('/api/providers')).json()).profiles).toEqual([]);
+  await dialog.getByRole('button', { name: '关闭 AI 提供商设置' }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('keeps AI provider edits on a failed save and retries without duplicating a connection', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'AI 提供商', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'AI 提供商' });
+  const model = dialog.getByRole('combobox', { name: '模型', exact: true });
+  await model.fill('my-custom-model');
+  let attempts = 0;
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/providers', async route => {
+    if (route.request().method() === 'POST' && ++attempts === 1) {
+      await pending;
+      await route.fulfill({ status: 503, json: { error: '暂时无法保存。' } });
+    } else await route.continue();
+  });
+  const save = dialog.getByRole('button', { name: '保存并使用' });
+  await save.click();
+  try {
+    await expect(save).toHaveAttribute('aria-busy', 'true');
+    await expect(save).toBeDisabled();
+  } finally { release(); }
+  await expect(dialog.getByRole('alert')).toHaveText('暂时无法保存。');
+  await expect(model).toHaveValue('my-custom-model');
+  await dialog.getByRole('button', { name: '关闭错误提示' }).click();
+  await expect(dialog.getByRole('alert')).toHaveCount(0);
+  await save.click();
+  await expect(dialog.locator('.provider-current strong')).toHaveText('OpenAI · my-custom-model');
+  await dialog.getByRole('button', { name: '移除连接' }).click();
+  await expect(dialog.getByRole('button', { name: /^已保存的连接 / })).toContainText('添加新连接');
+  expect(attempts).toBe(3);
+});

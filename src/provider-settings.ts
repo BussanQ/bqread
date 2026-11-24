@@ -1,3 +1,8 @@
+// Lucian UX/UI Prompt #403 · MIT License (c) 2026 Seokwoooo · https://lucianlabs.dev/uxui-prompt/#403
+// Lucian UX/UI Prompt #072 · MIT License (c) 2026 Seokwoooo · https://lucianlabs.dev/uxui-prompt/#072
+import './ui/provider-settings.css';
+import { selectField, bindSelect } from './ui/provider-select';
+import { modelField, bindModel } from './ui/provider-model';
 import presets from './provider-presets.json';
 import { escapeHTML } from './html';
 import { icon } from './icons';
@@ -22,87 +27,174 @@ async function settingsRequest(input?: object): Promise<Settings> {
   return data;
 }
 
+const protocols = [
+  { value: 'chat-completions', label: 'OpenAI Chat Completions' },
+  { value: 'responses', label: 'OpenAI Responses' },
+  { value: 'anthropic-messages', label: 'Anthropic Messages' },
+];
+
+function textField(name: string, label: string, attributes: string, accessory = '') {
+  return `<div class="u403-f ${accessory ? 'u403-pw' : ''}">
+    <input class="u403-in" id="provider-${name}" name="${name}" placeholder=" " ${attributes}>
+    <label for="provider-${name}">${label}</label>${accessory}
+  </div>`;
+}
+
+const eye = `<button type="button" class="u403-eye" aria-label="显示 API 密钥" aria-pressed="false">
+  <svg viewBox="0 0 20 20" aria-hidden="true"><g class="lid"><path d="M2 10s3-5.2 8-5.2S18 10 18 10s-3 5.2-8 5.2S2 10 2 10z"/><circle cx="10" cy="10" r="2.4"/></g><g class="lash"><path d="M3 10.4c2 2.4 4.4 3.4 7 3.4s5-1 7-3.4M6 13l-1 1.6M10 14v1.8M14 13l1 1.6"/></g></svg>
+</button>`;
+
 export async function openProviderSettings(): Promise<void> {
   if (document.querySelector('.provider-dialog[open]')) return;
   const dialog = document.createElement('dialog');
-  dialog.className = 'modal provider-dialog';
+  dialog.className = 'ux u403 provider-dialog';
   dialog.setAttribute('aria-labelledby', 'provider-title');
-  dialog.innerHTML = `<header class="modal-header"><h2 class="modal-title" id="provider-title">AI 提供商</h2><button class="icon-button modal-close" aria-label="关闭">${icon('close')}</button></header>
-    <div class="provider-body">正在读取设置…</div><p role="alert" class="form-error" hidden></p>`;
+  dialog.innerHTML = `<header class="provider-header"><h2 id="provider-title">AI 提供商</h2>
+    <button class="u072-x" data-close aria-label="关闭 AI 提供商设置">${icon('close')}</button></header>
+    <div class="provider-body"><p role="status">正在读取设置…</p></div>
+    <div class="u072-it" hidden><div><div class="u072-a">
+      <span class="u072-ic" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M8 4.5v4M8 11.2h.01"/></svg></span>
+      <div class="u072-tx" role="alert"></div><button type="button" class="u072-x" data-dismiss aria-label="关闭错误提示">${icon('close')}</button>
+    </div></div></div><p class="u403-live" role="status"></p>`;
   document.body.append(dialog);
-  dialog.addEventListener('close', () => dialog.remove(), { once: true });
-  dialog.querySelector('button')!.onclick = () => dialog.close();
-  dialog.showModal();
   const body = dialog.querySelector<HTMLElement>('.provider-body')!;
-  const alert = dialog.querySelector<HTMLElement>('[role=alert]')!;
+  const alert = dialog.querySelector<HTMLElement>('.u072-it')!;
+  const live = dialog.querySelector<HTMLElement>('.u403-live')!;
   let state: Settings;
+  let feedbackTimer: ReturnType<typeof setTimeout>;
+  dialog.addEventListener('close', () => { clearTimeout(feedbackTimer); dialog.remove(); }, { once: true });
+  const closeButton = dialog.querySelector<HTMLButtonElement>('[data-close]')!;
+  closeButton.onclick = () => dialog.close();
+  dialog.querySelector<HTMLButtonElement>('[data-dismiss]')!.onclick = () => {
+    closeButton.focus({ preventScroll: true });
+    alert.classList.add('gone');
+    alert.inert = true;
+    alert.setAttribute('aria-hidden', 'true');
+  };
+  dialog.onkeydown = event => {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+      event.preventDefault();
+      const model = body.querySelector<HTMLInputElement>('[name=model]');
+      model?.focus();
+      model?.select();
+    }
+  };
+  dialog.showModal();
+
   function report(error: unknown) {
+    alert.removeAttribute('aria-hidden');
+    alert.classList.remove('gone');
+    alert.inert = false;
     alert.hidden = false;
-    alert.textContent = error instanceof Error ? error.message : '操作失败，请重试。';
+    alert.querySelector('[role=alert]')!.textContent = error instanceof Error ? error.message : '操作失败，请重试。';
+    alert.scrollIntoView({ block: 'nearest' });
   }
-  async function update(input: object) {
-    const fields = body.querySelector<HTMLFieldSetElement>('fieldset')!;
+  async function update(input: object, trigger: HTMLButtonElement, success: string) {
+    const fields = body.querySelector('fieldset')!;
+    if (fields.disabled) return;
+    const saving = trigger.type === 'submit';
     fields.disabled = true;
     alert.hidden = true;
-    try { state = await settingsRequest(input); render(); }
-    catch (error) { fields.disabled = false; report(error); }
+    trigger.setAttribute('aria-busy', 'true');
+    if (saving) trigger.classList.add('is-busy');
+    live.textContent = '正在更新设置…';
+    try {
+      state = await settingsRequest(input);
+      if (!dialog.open) return;
+      render();
+      live.textContent = success;
+      if (saving) {
+        const saved = body.querySelector<HTMLButtonElement>('.u403-go')!;
+        saved.classList.add('is-ok');
+        clearTimeout(feedbackTimer);
+        feedbackTimer = setTimeout(() => saved.classList.remove('is-ok'), 1600);
+      }
+      body.querySelector<HTMLButtonElement>('[data-select=connection] button')!.focus({ preventScroll: true });
+    } catch (error) {
+      if (!dialog.open) return;
+      fields.disabled = false;
+      trigger.removeAttribute('aria-busy');
+      trigger.classList.remove('is-busy');
+      live.textContent = '';
+      trigger.focus({ preventScroll: true });
+      report(error);
+    }
   }
   function render(editId = state.active) {
     const edit = state.profiles.find(p => p.id === editId);
     const current = state.profiles.find(p => p.id === state.active);
     const status = current ? current.name + ' · ' + current.model : state.environmentModel || '尚未配置';
-    body.innerHTML = `<p class="provider-current">当前模型　<strong>${escapeHTML(status)}</strong></p><fieldset>
-      <label class="field">已保存的连接<select class="text-input" name="connection"><option value="">添加新连接</option>${state.profiles.map(p => `<option value="${escapeHTML(p.id)}" ${p.id === editId ? 'selected' : ''}>${escapeHTML(p.name)} · ${escapeHTML(p.model)}</option>`).join('')}</select></label>
-      <form><div class="provider-grid"><label class="field">提供商<select class="text-input" name="preset">${presets.map(p => `<option value="${p.id}">${escapeHTML(p.name)}</option>`).join('')}</select></label>
-      <label class="field">连接名称<input class="text-input" name="name" required maxlength="100"></label></div>
-      <label class="field">API 协议<select class="text-input" name="protocol"><option value="chat-completions">OpenAI Chat Completions</option><option value="responses">OpenAI Responses</option><option value="anthropic-messages">Anthropic Messages</option></select></label>
-      <label class="field">API 基础地址<input class="text-input" name="baseURL" type="url" placeholder="https://example.com/v1" required></label>
-      <label class="field">API 密钥<input class="text-input" name="apiKey" type="password" autocomplete="new-password"></label>
-      <label class="field">模型<input class="text-input" name="model" list="provider-models" placeholder="选择或输入模型 ID" required></label><datalist id="provider-models"></datalist>
-      <div class="modal-actions">${edit ? '<button type="button" class="secondary-button" data-remove>移除连接</button>' : ''}<button class="primary-button" type="submit">保存并使用</button></div></form>
-      ${state.active ? '<button type="button" class="footer-link" data-env>使用服务端环境配置</button>' : ''}</fieldset>`;
+    body.innerHTML = `<fieldset aria-label="提供商设置">
+      <div class="provider-current"><div><span>当前模型</span><strong>${escapeHTML(status)}</strong></div>
+        ${state.active ? '<button class="u072-again" type="button" data-env>使用服务端环境配置</button>' : ''}</div>
+      ${selectField('connection', '已保存的连接')}
+      <form><div class="provider-grid">${selectField('preset', '提供商')}${selectField('protocol', 'API 协议')}</div>
+        ${textField('name', '连接名称', 'required maxlength="100"')}
+        ${textField('baseURL', 'API 基础地址', 'type="url" required spellcheck="false"')}
+        ${textField('apiKey', 'API 密钥', 'type="password" autocomplete="new-password" spellcheck="false" aria-describedby="provider-key-hint"', eye)}
+        <p id="provider-key-hint"></p>
+        ${modelField()}
+        <div class="provider-actions">${edit ? '<button type="button" class="u072-again" data-remove>移除连接</button>' : ''}
+          <button class="u403-go" type="submit"><span>保存并使用</span><i aria-hidden="true"></i><svg viewBox="0 0 22 22" aria-hidden="true"><path d="M5.5 11.5l4 4L17 7.5"/></svg></button>
+        </div></form></fieldset>`;
     const form = body.querySelector('form')!;
-    const field = (name: string) => form.elements.namedItem(name) as HTMLInputElement | HTMLSelectElement;
-    const initialPreset = edit ? (presets.find(p => p.id === edit.preset)?.id ?? 'custom') : 'openai';
+    const field = (name: string) => form.elements.namedItem(name) as HTMLInputElement;
+    const initialPreset = presets.find(p => p.id === edit?.preset)?.id ?? (edit ? 'custom' : 'openai');
     const sameConnection = () => edit && initialPreset === field('preset').value &&
       edit.baseURL === field('baseURL').value.trim().replace(/\/+$/, '');
     const updateKeyHint = () => {
-      (field('apiKey') as HTMLInputElement).placeholder = edit?.hasKey && sameConnection() ? '已保存，留空沿用' : '本地免密服务可留空';
+      form.querySelector('#provider-key-hint')!.textContent = edit?.hasKey && sameConnection() ? '已保存密钥，留空沿用。' : '本地免密服务可留空。';
     };
-    const selectPreset = (id: string) => {
-      const preset = presets.find(p => p.id === id) ?? presets[0]!;
-      field('preset').value = preset.id;
+
+    bindSelect(body, 'connection', [
+      { value: '', label: '添加新连接' },
+      ...state.profiles.map(p => ({ value: p.id, label: p.name, detail: p.model })),
+    ], edit?.id ?? '', id => {
+      alert.hidden = true;
+      render(id);
+      body.querySelector<HTMLButtonElement>('[data-select=connection] button')!.focus({ preventScroll: true });
+    });
+    const setProtocol = bindSelect(body, 'protocol', protocols, edit?.protocol ?? protocols[0]!.value);
+    const reveal = form.querySelector<HTMLButtonElement>('.u403-eye')!;
+    const setVisible = (show: boolean) => {
+      reveal.setAttribute('aria-pressed', String(show));
+      field('apiKey').type = show ? 'text' : 'password';
+    };
+    reveal.onclick = () => setVisible(field('apiKey').type === 'password');
+    let preset = presets.find(p => p.id === initialPreset)!;
+    bindSelect(body, 'preset', presets.map(p => ({ value: p.id, label: p.name })), initialPreset, id => {
+      preset = presets.find(p => p.id === id)!;
       field('name').value = preset.name;
-      field('protocol').value = preset.protocol;
+      setProtocol(preset.protocol);
       field('baseURL').value = preset.baseURL;
       field('model').value = '';
       field('apiKey').value = '';
+      setVisible(false);
       updateKeyHint();
-      form.querySelector('datalist')!.innerHTML = preset.models.map(m => `<option value="${escapeHTML(m)}"></option>`).join('');
-    };
-    selectPreset(initialPreset);
-    if (edit) {
-      for (const key of ['name','protocol','baseURL','model'] as const) field(key).value = edit[key];
-      updateKeyHint();
-    }
-    field('preset').onchange = () => selectPreset(field('preset').value);
+    });
+    field('name').value = edit?.name ?? preset.name;
+    field('baseURL').value = edit?.baseURL ?? preset.baseURL;
+    field('model').value = edit?.model ?? '';
+    setProtocol(edit?.protocol ?? preset.protocol);
+    updateKeyHint();
     field('baseURL').oninput = updateKeyHint;
-    body.querySelector<HTMLSelectElement>('[name=connection]')!.onchange = event => { alert.hidden = true; render((event.target as HTMLSelectElement).value); };
+    bindModel(form, () => preset.models);
+    const save = form.querySelector<HTMLButtonElement>('[type=submit]')!;
     form.onsubmit = event => {
       event.preventDefault();
       const values = Object.fromEntries(new FormData(form));
       if (edit && sameConnection()) {
-        // Existing connections may still use authentication specific to a retired preset.
+        // The server can still use authentication specific to a retired preset.
         values.preset = edit.preset;
         if (!values.apiKey) delete values.apiKey;
       }
-      void update({ ...values, action: 'save', id: edit?.id });
+      void update({ ...values, action: 'save', id: edit?.id }, save, '已保存并使用此连接。');
     };
     const remove = body.querySelector<HTMLButtonElement>('[data-remove]');
-    if (remove) remove.onclick = () => void update({ action: 'remove', id: edit!.id });
+    if (remove && edit) remove.onclick = () => void update({ action: 'remove', id: edit.id }, remove, '已移除连接。');
     const env = body.querySelector<HTMLButtonElement>('[data-env]');
-    if (env) env.onclick = () => void update({ action: 'activate', id: '' });
+    if (env) env.onclick = () => void update({ action: 'activate', id: '' }, env, '已切换到服务端环境配置。');
   }
-  try { state = await settingsRequest(); render(); }
-  catch (error) { body.replaceChildren(); report(error); }
+  try { state = await settingsRequest(); if (dialog.open) render(); }
+  catch (error) { if (dialog.open) { body.replaceChildren(); report(error); } }
 }
