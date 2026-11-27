@@ -28,6 +28,7 @@ export interface ReadingSettings {
 }
 
 export interface BookSummary extends Omit<Book, 'content' | 'chapters'> {
+  readingLocation?: number;
   contentLength: number;
   chapterCount: number;
 }
@@ -42,7 +43,7 @@ export interface ChapterWindow {
 }
 
 export interface ReaderState {
-  chapters: ChapterInfo[];
+  chapters: (ChapterInfo & { sourceIndex: number; readingStart: number })[];
   window: ChapterWindow;
   bookId: string;
   chapterIndex: number;

@@ -1,3 +1,5 @@
+/* Lucian UX/UI Prompt #044 · MIT License (c) 2026 Seokwoooo · https://lucianlabs.dev/uxui-prompt/#044 */
+/* Lucian UX/UI Prompt #066 · MIT License (c) 2026 Seokwoooo · https://lucianlabs.dev/uxui-prompt/#066 */
 /* Lucian UX/UI Prompt #031 · MIT License (c) 2026 Seokwoooo · https://lucianlabs.dev/uxui-prompt/#031 */
 .u031-f { position: relative; min-width: 0; }
 .u031-lab { display: block; margin: 0 2px 7px; font-size: 12.5px; font-weight: 700; color: var(--ux-ink-3); }
@@ -36,21 +38,6 @@
 .u403-eye .lash { opacity: 1; transition: opacity .2s,transform .4s var(--ux-spring); transform-origin: 10px 10px; }
 .u403-eye[aria-pressed="true"] .lid { transform: none; }
 .u403-eye[aria-pressed="true"] .lash { opacity: 0; transform: translateY(-3px); }
-.u403-go { position: relative; display: grid; place-items: center; width: min(100%,280px); height: 48px; margin: 0; padding: 0; border: 0; border-radius: 14px; background: var(--ux-ink); color: var(--ux-surface); font-size: 14.5px; font-weight: 600; overflow: hidden; transition: width .55s var(--ux-spring),border-radius .45s var(--ux-ease),background .35s,color .35s,transform .4s var(--ux-spring); }
-.u403-go:hover { transform: translateY(-1px); }
-.u403-go:active { transform: scale(.97,.94); transition-duration: .55s,.45s,.35s,.35s,.1s; }
-.u403 .u403-go:focus-visible { outline: 2px solid var(--ux-accent); outline-offset: 3px; }
-.u403-go>* { grid-area: 1/1; transition: opacity .2s,transform .4s var(--ux-spring); }
-.u403-go i { width: 18px; height: 18px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; opacity: 0; transform: scale(.5); animation: u403-spin .7s linear infinite; }
-.u403-go svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; opacity: 0; transform: scale(.5); }
-.u403-go svg path { stroke-dasharray: 20; stroke-dashoffset: 20; transition: stroke-dashoffset .4s var(--ux-ease) .1s; }
-@keyframes u403-spin{to{rotate:360deg}}
-.u403-go.is-busy,.u403-go.is-ok { width: 48px; border-radius: 24px; cursor: default; }
-.u403-go.is-busy span,.u403-go.is-ok span { opacity: 0; transform: scale(.8); }
-.u403-go.is-busy i { opacity: 1; transform: none; }
-.u403-go.is-ok { background: var(--ux-mint); color: var(--ux-accent-ink); }
-.u403-go.is-ok svg { opacity: 1; transform: none; }
-.u403-go.is-ok svg path { stroke-dashoffset: 0; }
 .u403-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* Lucian UX/UI Prompt #429 · MIT License (c) 2026 Seokwoooo · https://lucianlabs.dev/uxui-prompt/#429 */
@@ -95,7 +82,6 @@
 .provider-dialog {
   --ux-accent-soft: color-mix(in srgb, var(--ux-accent) 13%, transparent);
   --ux-accent-ink: var(--white);
-  --ux-mint: var(--green);
   --ux-danger: #a34235;
   --c: var(--ux-accent);
   color-scheme: light;
@@ -117,12 +103,14 @@
 .provider-header .u072-x { width: 36px; height: 36px; background: var(--ux-surface-2); }
 .provider-current { padding: 14px; border-radius: 16px; background: var(--ux-surface-2); flex-wrap: wrap; }
 .provider-current div { min-width: 0; }
-.provider-current span, #provider-key-hint { display: block; color: var(--ux-ink-3); font-size: 12.5px; }
+.provider-current .provider-summary { flex: 1; }
+.provider-summary small, .provider-summary span, #provider-key-hint { display: block; font-size: 12.5px; color: var(--ux-ink-3); }
+.provider-summary small { margin-top: 3px; overflow-wrap: anywhere; }
+.provider-current > .icon { flex: none; width: 32px; height: 32px; padding: 6px; border-radius: 10px; background: var(--ux-surface); color: var(--ux-accent); }
 .provider-current strong { display: block; margin-top: 4px; font-size: 15px; overflow-wrap: anywhere; }
 .provider-current .u072-again { background: var(--ux-surface); }
-.provider-dialog fieldset, .provider-dialog form { display: grid; gap: 14px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.provider-dialog fieldset, .provider-fields, .provider-dialog form { display: grid; gap: 14px; border: 0; padding: 0; margin: 0; min-width: 0; }
 .provider-dialog form { border-top: 1px solid var(--ux-line); padding-top: 14px; }
-.provider-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
 .provider-dialog .u031-list { max-height: min(244px,40dvh); overflow-y: auto; overscroll-behavior: contain; }
 .provider-dialog .u031-v b, .provider-dialog .u031-v small, .provider-dialog .u031-o span, .provider-dialog .u031-o small {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -135,10 +123,8 @@
 .provider-dialog .u429-dd[inert], .provider-dialog .u031-list[inert] { pointer-events: none; }
 .provider-dialog .u429:not(.is-open) .u429-dd { max-height: 0; overflow: hidden; padding-block: 0; }
 .provider-dialog .u429.opens-above .u429-dd { top: auto; bottom: 56px; margin: 0; transform-origin: bottom; }
-.provider-dialog .u403-go:not(.is-busy) i { animation-play-state: paused; }
 .provider-actions { justify-content: flex-end; padding-top: 4px; }
 .provider-actions [data-remove] { margin-right: auto; color: var(--ux-danger); }
-.provider-dialog .u403-go { max-width: 100%; }
 .provider-dialog .u072-it { --c: var(--ux-danger); margin: 14px 0 0; }
 .provider-dialog .u072-it.gone { margin: 0; }
 .provider-dialog .u072-tx { align-self: center; font-size: 14px; overflow-wrap: anywhere; }
@@ -146,10 +132,8 @@
   .provider-dialog { padding: 16px 18px; }
   .provider-header { margin-bottom: 12px; }
   .provider-current { padding: 10px 14px; }
-  .provider-dialog form, .provider-dialog fieldset, .provider-grid { gap: 10px; }
-  .provider-actions .u403-go:only-child:not(.is-busy):not(.is-ok) { width: 100%; }
+  .provider-dialog form, .provider-dialog fieldset, .provider-fields { gap: 10px; }
   .provider-dialog .u429-kb { display: none; }
-  .provider-grid { grid-template-columns: minmax(0,1fr); }
   .provider-actions [data-remove] { flex: none; }
 }
 @media (prefers-color-scheme: dark) {
@@ -161,6 +145,107 @@
     --ux-accent: #b0cba6;
     --ux-accent-ink: #20281e;
     --ux-danger: #ffb1a1;
-    --ux-mint: #b0cba6;
   }
 }
+
+/* UIKit already insets the WebView to the safe area. The visual viewport follows the keyboard. */
+.ios-app .provider-dialog[open] {
+  position: fixed;
+  inset: var(--provider-top, 0px) 0 auto;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: var(--provider-height, 100dvh);
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  word-break: normal;
+}
+.ios-app .provider-header { flex: none; margin: 0; padding: 8px 16px; border-bottom: 1px solid var(--ux-line); }
+.ios-app .provider-header h2 { font-size: 20px; }
+.ios-app .provider-header .u072-x, .ios-app .provider-dialog .u403-eye { width: 44px; height: 44px; }
+.ios-app .provider-dialog .u403-eye { top: 4px; right: 4px; }
+.ios-app .provider-body { flex: 1; min-height: 0; }
+.ios-app .provider-body > p { margin-inline: 16px; }
+.ios-app .provider-dialog fieldset { height: 100%; grid-template-rows: minmax(0, 1fr) auto; gap: 0; }
+.ios-app .provider-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-padding-block: 12px;
+}
+.ios-app .provider-fields > * { flex: none; }
+.ios-app .provider-picker { display: block; min-width: 0; }
+.ios-app .provider-picker select {
+  width: 100%;
+  min-height: 48px;
+  padding-inline: 12px;
+  border: 1px solid var(--ux-line-2);
+  border-radius: 12px;
+  background-color: var(--ux-surface);
+  color: var(--ux-ink);
+  font: inherit;
+  font-size: 16px;
+}
+.ios-app .provider-dialog :is(.u403-in, .u429-in) { font-size: 16px; }
+.ios-app .provider-dialog .u429-kb { display: none; }
+.ios-app .provider-dialog .u429.is-open .u429-dd { position: relative; inset: auto; margin-top: 8px; }
+.ios-app .provider-actions { padding: 8px 16px; border-top: 1px solid var(--ux-line); }
+.ios-app .provider-actions [data-remove] { flex: none; min-height: 44px; }
+.ios-app .provider-dialog .u072-it:not(.gone) { flex: none; max-height: 25%; overflow: auto; margin: 0; }
+
+.provider-dialog .u044-it{position:relative;border-radius:20px;background:var(--ux-surface);box-shadow:0 0 0 1px var(--ux-line);transition:background-color .4s var(--ux-ease),box-shadow .5s var(--ux-ease),transform .5s var(--ux-spring)}
+.provider-dialog .u044-it.open{box-shadow:0 0 0 1px var(--ux-line-2),0 22px 40px -22px var(--ux-shadow-strong);transform:translateY(-2px)}
+.provider-dialog .u044-q{position:relative;display:flex;align-items:center;gap:12px;width:100%;min-height:58px;padding:0 14px 0 16px;border:0;border-radius:20px;background:none;font-size:14.5px;font-weight:680;letter-spacing:-.02em;color:var(--ux-ink);text-align:left}
+.provider-dialog .u044-q:focus-visible{outline:2px solid var(--ux-accent);outline-offset:2px}
+.provider-dialog .u044-t{flex:1}
+.provider-dialog .u044-pm{position:relative;width:30px;height:30px;flex:none;border-radius:50%;background:var(--ux-surface-2);box-shadow:none;transition:background-color .35s var(--ux-ease),box-shadow .35s,transform .45s var(--ux-spring)}
+.provider-dialog .u044-q:hover .u044-pm{transform:scale(1.1)}
+.provider-dialog .u044-q:active .u044-pm{transform:scale(.9)}
+.provider-dialog .u044-pm::before,.u044-pm::after{content:"";position:absolute;left:50%;top:50%;width:11px;height:2px;margin:-1px 0 0 -5.5px;border-radius:2px;background:var(--ux-ink);transition:transform .5s var(--ux-spring),background-color .3s}
+.provider-dialog .u044-pm::after{transform:rotate(90deg)}
+.provider-dialog .u044-it.open .u044-pm{background:var(--ux-ink);box-shadow:none}
+.provider-dialog .u044-it.open .u044-pm::before,.u044-it.open .u044-pm::after{background:var(--ux-page)}
+.provider-dialog .u044-it.open .u044-pm::after{transform:rotate(180deg)}
+.provider-dialog .u044-body{display:grid;grid-template-rows:0fr;transition:grid-template-rows .5s var(--ux-ease)}
+.provider-dialog .u044-it.open .u044-body{grid-template-rows:1fr}
+.provider-dialog .u044-body>div{overflow:hidden;min-height:0}
+.provider-dialog .u044-a{padding:0 18px 16px 42px;opacity:0;transform:translateY(-8px);transition:opacity .25s var(--ux-ease),transform .45s var(--ux-spring)}
+.provider-dialog .u044-it.open .u044-a{opacity:1;transform:none;transition-delay:.12s}
+.provider-dialog .u066-b{position:relative;width:100%;height:54px;border:0;border-radius:16px;display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--bg);color:var(--fg);font-size:15px;font-weight:720;text-align:left;box-shadow:var(--bd,none);transition:transform .3s var(--ux-spring),height .45s var(--ux-ease),border-radius .45s}
+.provider-dialog .u066-b:hover{transform:translateY(-1px)}
+.provider-dialog .u066-b:active{transform:scale(.98)}
+.provider-dialog .u066-b:focus-visible{outline:2px solid var(--ux-accent);outline-offset:2px}
+.provider-dialog .u066-tx{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.provider-dialog .u066-tx small{display:block;overflow:hidden;text-overflow:ellipsis;font-size:12px;font-weight:600;opacity:.7}
+.provider-dialog .u066-st{width:0;height:22px;flex:none;position:relative;margin-left:-12px;transition:width .3s,margin .3s}
+.provider-dialog .u066-b.busy .u066-st,.provider-dialog .u066-b.ok .u066-st{width:22px;margin-left:0}
+.provider-dialog .u066-st i{position:absolute;inset:0;border-radius:50%;border:2.5px solid currentColor;border-right-color:transparent;opacity:0;animation:u066-spin .7s linear infinite}
+.provider-dialog .u066-st svg{position:absolute;inset:0;width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2.8;stroke-linecap:round;stroke-linejoin:round}
+.provider-dialog .u066-st path{stroke-dasharray:22;stroke-dashoffset:22;transition:stroke-dashoffset .4s var(--ux-ease)}
+.provider-dialog .u066-b.busy .u066-st i{opacity:1}
+.provider-dialog .u066-b.ok .u066-st path{stroke-dashoffset:0}
+.provider-dialog .u066-b.ok{height:72px;border-radius:20px}
+@keyframes u066-spin{to{transform:rotate(360deg)}}
+
+.provider-dialog .u044-a { display: grid; gap: 12px; padding-inline: 16px; }
+.provider-dialog .u044-a .u031-list.is-open { position: relative; inset: auto; margin-top: 8px; }
+.provider-dialog .u066-b {
+  --bg: var(--ux-ink);
+  --fg: var(--ux-surface);
+  width: min(100%, 280px);
+}
+.provider-dialog .u066-b.ok { --bg: var(--ux-accent); --fg: var(--ux-accent-ink); }
+.provider-dialog .u066-b:not(.busy) .u066-st i { animation-play-state: paused; }
+@media (max-width: 540px) {
+  .provider-actions .u066-b { width: 100%; }
+  .provider-current [data-env] { height: auto; min-height: 44px; }
+}
+.ios-app .provider-actions .u066-b { width: 100%; }

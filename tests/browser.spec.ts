@@ -472,6 +472,18 @@ test('manages AI provider connections with the keyboard and mobile controls', as
   await page.getByRole('button', { name: 'AI 提供商', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'AI 提供商' });
   const preset = dialog.getByRole('button', { name: /^提供商 / });
+  const disclosure = dialog.getByRole('button', { name: '接口设置' });
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+  await preset.click();
+  await dialog.getByRole('option', { name: '自定义 API 服务' }).click();
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+  const address = dialog.getByLabel('API 基础地址');
+  await address.fill('invalid');
+  await dialog.getByRole('combobox', { name: '模型', exact: true }).fill('test-model');
+  await disclosure.click();
+  await dialog.getByRole('button', { name: '保存并使用' }).click();
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+  await expect(address).toBeFocused();
   await preset.focus();
   await page.keyboard.press('Space');
   await page.keyboard.press('d');
@@ -479,6 +491,10 @@ test('manages AI provider connections with the keyboard and mobile controls', as
   await expect(preset).toBeFocused();
   await expect(dialog.getByLabel('连接名称')).toHaveValue('DeepSeek');
   await expect(dialog.getByLabel('API 基础地址')).toHaveValue('https://api.deepseek.com');
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+  await disclosure.focus();
+  await page.keyboard.press('Enter');
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
   const protocol = dialog.getByRole('button', { name: /^API 协议 / });
   await protocol.click();
   await page.keyboard.press('Escape');
@@ -499,7 +515,9 @@ test('manages AI provider connections with the keyboard and mobile controls', as
   await expect(secret).toHaveAttribute('type', 'password');
   const save = dialog.getByRole('button', { name: '保存并使用' });
   await save.click();
-  await expect(dialog.locator('.provider-current strong')).toHaveText('DeepSeek · deepseek-flash');
+  await expect(dialog.locator('.provider-current strong')).toHaveText('DeepSeek');
+  await expect(dialog.locator('.provider-current small')).toHaveText('deepseek-flash');
+  await expect(dialog.getByRole('button', { name: '已保存并启用 deepseek-flash' })).toBeVisible();
   await expect(secret).toHaveValue('');
   await expect(dialog.locator('#provider-key-hint')).toContainText('留空沿用');
 
@@ -509,7 +527,9 @@ test('manages AI provider connections with the keyboard and mobile controls', as
   await dialog.getByLabel('连接名称').fill('测试连接');
   await model.fill('custom-model');
   await save.click();
-  await expect(dialog.locator('.provider-current strong')).toHaveText('测试连接 · custom-model');
+  await expect(dialog.locator('.provider-current strong')).toHaveText('测试连接');
+  await expect(dialog.locator('.provider-current small')).toHaveText('custom-model');
+  await expect(dialog.getByRole('button', { name: '已保存并启用 custom-model' })).toBeVisible();
   expect((await (await request.get('/api/providers')).json()).profiles).toEqual([
     expect.objectContaining({ name: '测试连接', model: 'custom-model', hasKey: true }),
   ]);
@@ -520,7 +540,8 @@ test('manages AI provider connections with the keyboard and mobile controls', as
   await connection.click();
   await dialog.getByRole('option', { name: '测试连接 custom-model' }).click();
   await dialog.getByRole('button', { name: '移除连接' }).click();
-  await expect(connection).toContainText('添加新连接');
+  await expect(connection).toHaveCount(0);
+  await expect(preset).toBeFocused();
   expect((await (await request.get('/api/providers')).json()).profiles).toEqual([]);
   await dialog.getByRole('button', { name: '关闭 AI 提供商设置' }).click();
   await expect(dialog).toHaveCount(0);
@@ -545,16 +566,172 @@ test('keeps AI provider edits on a failed save and retries without duplicating a
   const save = dialog.getByRole('button', { name: '保存并使用' });
   await save.click();
   try {
-    await expect(save).toHaveAttribute('aria-busy', 'true');
-    await expect(save).toBeDisabled();
+    const saving = dialog.getByRole('button', { name: '正在保存…' });
+    await expect(saving).toHaveAttribute('aria-busy', 'true');
+    await expect(saving).toBeDisabled();
   } finally { release(); }
   await expect(dialog.getByRole('alert')).toHaveText('暂时无法保存。');
   await expect(model).toHaveValue('my-custom-model');
   await dialog.getByRole('button', { name: '关闭错误提示' }).click();
   await expect(dialog.getByRole('alert')).toHaveCount(0);
   await save.click();
-  await expect(dialog.locator('.provider-current strong')).toHaveText('OpenAI · my-custom-model');
+  await expect(dialog.locator('.provider-current strong')).toHaveText('OpenAI');
+  await expect(dialog.locator('.provider-current small')).toHaveText('my-custom-model');
+  await expect(dialog.getByRole('button', { name: '已保存并启用 my-custom-model' })).toBeVisible();
   await dialog.getByRole('button', { name: '移除连接' }).click();
-  await expect(dialog.getByRole('button', { name: /^已保存的连接 / })).toContainText('添加新连接');
+  await expect(dialog.getByRole('button', { name: /^已保存的连接 / })).toHaveCount(0);
   expect(attempts).toBe(3);
+});
+
+for (const touch of [false, true]) {
+  test.describe(touch ? 'touch reader' : 'desktop reader', () => {
+    test.use({ hasTouch: touch, viewport: touch ? { width: 390, height: 844 } : { width: 1280, height: 800 } });
+
+    test('opens annotation shortcuts in the center and saves both actions', async ({ page }) => {
+      await page.goto('/');
+      await page.locator('[data-action=read]').first().click();
+      const { width, height } = page.viewportSize()!;
+      const point = { x: width / 2, y: height / 2 };
+      const menu = page.getByRole('group', { name: '阅读快捷操作' });
+      const client = touch ? await page.context().newCDPSession(page) : undefined;
+      async function openMenu() {
+        if (client) {
+          await page.touchscreen.tap(point.x, point.y);
+        } else {
+          await page.mouse.click(point.x, point.y, { button: 'right' });
+        }
+        await expect(menu).toBeVisible();
+        await expect(menu.getByRole('button')).toHaveCount(2);
+      }
+      await expect(page.locator('.reading-chapter-title')).toBeVisible();
+      if (client) {
+        await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] });
+        await page.waitForTimeout(650);
+        await expect(menu).toBeHidden();
+        await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        await expect(menu).toBeHidden();
+        await page.evaluate(() => getSelection()?.removeAllRanges());
+        await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] });
+        await client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: point.x, y: point.y - 60 }] });
+        await page.waitForTimeout(500);
+        await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        await expect(menu).toBeHidden();
+      } else {
+        const allowed = await page.evaluate(y => document.elementFromPoint(8, y)!.dispatchEvent(
+          new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 8, clientY: y, button: 2 })), point.y);
+        expect(allowed).toBe(true);
+        await expect(menu).toBeHidden();
+      }
+      await openMenu();
+      const bookmark = menu.getByRole('button', { name: '保存书签' });
+      if (touch) await bookmark.tap();
+      else await bookmark.click();
+      await expect(menu).toBeHidden();
+      await expect(page.getByRole('status')).toHaveText('已保存当前位置的书签。');
+      await openMenu();
+      const note = menu.getByRole('button', { name: '添加笔记' });
+      if (touch) await note.tap();
+      else await note.click();
+      const input = page.getByLabel('笔记内容');
+      await expect(input).toBeFocused();
+      await input.fill('从正文添加的笔记');
+      await page.getByRole('button', { name: '保存笔记' }).click();
+      await expect(page.locator('#panel-note .annotation-jump')).toContainText('从正文添加的笔记');
+      await page.getByRole('tab', { name: '书签' }).click();
+      await expect(page.locator('#panel-bookmark .annotation-row')).toHaveCount(1);
+    });
+
+    test('pages from the edges and returns to the last screen of the previous chapter', async ({ page, request }) => {
+      const first = '他沿着海岸继续走。\n'.repeat(170);
+      const chapters = [{ title: '第一章', start: 0, content: first },
+        { title: '第二章', start: first.length + 5, content: '到家了。' }];
+      const saved = await request.post('/api/books', { data: { id: 'edge-pages', title: '翻页测试', author: '测试',
+        content: '第一章\n' + first + '\n第二章\n到家了。', chapters, cover: 'forest' } });
+      expect(saved.ok()).toBe(true);
+      await page.goto('/');
+      await page.getByRole('button', { name: '阅读《翻页测试》' }).click();
+      const heading = page.locator('.reading-chapter-title');
+      await expect(heading).toHaveText('第一章');
+      const { width, height } = page.viewportSize()!;
+      const tap = (x: number) => touch ? page.touchscreen.tap(x, height / 2) : page.mouse.click(x, height / 2);
+      const position = () => page.evaluate(() => scrollY);
+
+      await tap(width / 2);
+      await tap(8);
+      expect(await position()).toBe(0);
+      await tap(width - 8);
+      expect(await position()).toBeGreaterThan(height / 2);
+      expect(await position()).toBeLessThan(height);
+      await tap(8);
+      expect(await position()).toBe(0);
+
+      await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight));
+      await tap(width - 8);
+      await expect(heading).toHaveText('第二章');
+      await tap(width - 8);
+      await expect(heading).toHaveText('第二章');
+      await tap(8);
+      await expect(heading).toHaveText('第一章');
+      await expect.poll(() => page.evaluate(() => document.documentElement.scrollHeight - innerHeight - scrollY)).toBeLessThanOrEqual(1);
+    });
+  });
+}
+
+test('navigates a long catalog and restores bookmarks and editable notes', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await page.getByRole('button', { name: /导入小说/ }).click();
+  const text = Array.from({ length: 80 }, (_, i) => `第${i + 1}章 旅行\n` +
+    (i === 79 ? '沿着海边的小径走。\n'.repeat(160) : '岸边的小镇。')).join('\n');
+  await page.locator('#novel-file').setInputFiles({ name: '海边.txt', mimeType: 'text/plain', buffer: Buffer.from(text) });
+  await page.getByRole('button', { name: '加入书架' }).click();
+  const book = page.getByRole('button', { name: '阅读《海边》' });
+  await book.click();
+  const catalog = page.getByRole('button', { name: '章节目录' });
+  const last = page.locator('.chapter-link').last();
+  const first = page.locator('.chapter-link').first();
+  await catalog.click();
+  await page.getByRole('button', { name: '到底部' }).click();
+  await expect(last).toBeInViewport();
+  await page.getByRole('button', { name: '到顶部' }).click();
+  await expect(first).toBeInViewport();
+  await page.getByRole('button', { name: '到底部' }).click();
+  await last.click();
+  await expect(page.locator('.reading-chapter-title')).toHaveText('第80章 旅行');
+  await page.evaluate(() => window.scrollTo(0, 1250));
+  await catalog.click();
+  const bookmarks = page.getByRole('tab', { name: '书签' });
+  const notes = page.getByRole('tab', { name: '笔记' });
+  await bookmarks.click();
+  await page.getByRole('button', { name: '添加当前位置' }).click();
+  await page.getByRole('button', { name: '添加当前位置' }).click();
+  await expect(page.locator('#panel-bookmark .annotation-row')).toHaveCount(1);
+  await notes.click();
+  await page.getByRole('button', { name: '写笔记' }).click();
+  await page.getByLabel('笔记内容').fill('记住这段海岸线');
+  await page.getByRole('button', { name: '保存笔记' }).click();
+  await page.getByRole('button', { name: '编辑', exact: true }).click();
+  await page.getByLabel('笔记内容').fill('下次再读 <海岸>');
+  await page.getByRole('button', { name: '保存笔记' }).click();
+  await page.getByRole('tab', { name: '目录', exact: true }).click();
+  await page.getByRole('button', { name: '到顶部' }).click();
+  await first.click();
+  await page.reload();
+  await book.click();
+  await catalog.click();
+  await notes.click();
+  await page.getByRole('button', { name: /下次再读 <海岸>/ }).click();
+  await expect(page.locator('.reading-chapter-title')).toHaveText('第80章 旅行');
+  expect(await page.evaluate(() => window.scrollY)).toBeCloseTo(1250, -1);
+  await catalog.click();
+  await notes.click();
+  await page.getByRole('button', { name: '删除笔记' }).click();
+  await expect(page.getByText('暂无笔记')).toBeVisible();
+  await bookmarks.click();
+  await page.locator('#panel-bookmark .annotation-jump').click();
+  await expect(page.locator('.contents-drawer')).toHaveCount(0);
+  await catalog.click();
+  await bookmarks.click();
+  await page.getByRole('button', { name: '删除书签' }).click();
+  await expect(page.getByText('暂无书签')).toBeVisible();
 });

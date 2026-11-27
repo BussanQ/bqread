@@ -181,6 +181,10 @@ kbd { border: 1px solid #d7ddcb; border-radius: 4px; background: #fffefa; paddin
 .toast-region { position: fixed; z-index: 100; bottom: 32px; left: 50%; transform: translateX(-50%); pointer-events: none; width: max-content; max-width: calc(100% - 32px); }
 .toast { display: flex; align-items: center; gap: 12px; padding: 16px 24px; background: #344e3d; color: #fffdf5; border-radius: 8px; box-shadow: 0 8px 32px #25342126; animation: toast-in 500ms var(--ease); }
 
+/* Native reading gestures use the layout viewport at a fixed scale. */
+html.ios-app { touch-action: pan-x pan-y; }
+.ios-app .header-chapter-navigation button:is(:hover, :active) { transform: none; }
+
 /* The reader */
 .reader-shell { --reader-bg: #f5f2e9; --reader-ink: #3d4437; --reader-muted: #939382; --reader-panel: #faf8f0; min-height: 100dvh; background: var(--reader-bg); color: var(--reader-ink); }
 .reader-shell[data-theme='sage'] { --reader-bg: #e8eddf; --reader-ink: #394735; --reader-muted: #87907a; --reader-panel: #f0f3e9; }
@@ -359,3 +363,35 @@ kbd { border: 1px solid #d7ddcb; border-radius: 4px; background: #fffefa; paddin
 }
 
 @media (max-width: 760px) { .main-nav { justify-content: space-between; gap: 4px; } }
+
+.contents-drawer { display: flex; flex-direction: column; overflow: hidden; padding: 24px; }
+.contents-drawer .drawer-header { margin-bottom: 16px; gap: 12px; }
+.contents-drawer .drawer-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.catalog-tabs { display: flex; padding: 4px; background: color-mix(in srgb, var(--reader-muted) 13%, transparent); border-radius: 24px; }
+.catalog-tabs button { flex: 1; background: transparent; border: 0; border-radius: 20px; color: var(--reader-ink); height: 40px; }
+.catalog-tabs button[aria-selected="true"] { background: var(--reader-ink); color: var(--reader-panel); font-weight: 600; }
+.contents-drawer [role="tabpanel"] { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.contents-drawer [hidden] { display: none; }
+.catalog-tools { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--chat-line); font-size: 13px; }
+.catalog-tools > div, .annotation-actions, .note-editor > div { display: flex; align-items: center; }
+.catalog-tools button, .annotation-actions button, .note-editor button { border: 0; background: transparent; color: var(--reader-ink); min-height: 44px; min-width: 44px; padding: 6px 8px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
+.catalog-tools button:hover, .annotation-actions button:hover, .note-editor button:hover { background: color-mix(in srgb, var(--reader-muted) 12%, transparent); border-radius: 8px; }
+.catalog-scroll { position: relative; overflow-y: auto; overscroll-behavior: contain; min-height: 0; flex: 1; }
+.contents-drawer .chapter-list { gap: 2px; }
+.contents-drawer .chapter-link { color: var(--reader-ink); }
+.annotation-row { display: flex; align-items: center; gap: 4px; border-bottom: 1px solid var(--chat-line); }
+.annotation-jump { min-width: 0; flex: 1; display: grid; gap: 4px; text-align: left; padding: 12px 4px; border: 0; background: transparent; color: inherit; overflow-wrap: anywhere; }
+.annotation-jump span { white-space: pre-wrap; }
+.annotation-jump small, .annotation-empty { color: var(--reader-ink); opacity: .75; }
+.note-editor { display: grid; gap: 6px; padding-top: 10px; font-size: 14px; }
+.note-editor textarea { box-sizing: border-box; width: 100%; max-height: 20dvh; background: var(--reader-bg); color: var(--reader-ink); border: 1px solid var(--chat-line); border-radius: 8px; padding: 8px; font: inherit; font-size: 16px; }
+.note-editor > div { justify-content: flex-end; }
+@media (max-width: 600px) {
+  .contents-drawer { top: max(8dvh, env(safe-area-inset-top)); width: 100%; border-radius: 20px 20px 0 0; padding: 14px 18px max(12px, env(safe-area-inset-bottom)); }
+  .contents-drawer .drawer-header { margin-bottom: 10px; }
+}
+
+.annotation-menu:not([hidden]) { position: fixed; z-index: 33; display: flex; align-items: center; gap: 2px; padding: 4px; border: 1px solid var(--chat-line); border-radius: 12px; box-shadow: 0 3px 14px #0003; background: var(--reader-panel); color: var(--reader-ink); }
+.annotation-menu button { min-height: 44px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: inherit; }
+.annotation-menu button:hover, .annotation-menu button:focus-visible { background: var(--chat-line); }
+.reader-shell:has(.annotation-menu:not([hidden])) .passage-chat { visibility: hidden !important; }

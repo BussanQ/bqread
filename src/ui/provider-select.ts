@@ -1,9 +1,13 @@
 // Lucian UX/UI Prompt #031 · MIT License (c) 2026 Seokwoooo · https://lucianlabs.dev/uxui-prompt/#031
 import { escapeHTML } from '../html';
+import { onIPhone } from '../mobile/platform';
 
 interface Option { value: string; label: string; detail?: string }
 
 export function selectField(name: string, label: string): string {
+  if (onIPhone) return `<label class="provider-picker" data-select="${name}">
+    <span class="u031-lab">${label}</span><select name="${name}"></select>
+  </label>`;
   return `<div class="u031 u031-f" data-select="${name}">
     <span class="u031-lab" id="label-${name}">${label}</span>
     <input type="hidden" name="${name}">
@@ -18,6 +22,16 @@ export function selectField(name: string, label: string): string {
 
 export function bindSelect(container: HTMLElement, name: string, options: Option[], value: string, change?: (value: string) => void) {
   const root = container.querySelector<HTMLElement>(`[data-select="${name}"]`)!;
+  const picker = root.querySelector('select');
+  if (picker) {
+    for (const option of options) {
+      picker.add(new Option(option.detail ? `${option.label} · ${option.detail}` : option.label, option.value));
+    }
+    const setValue = (next: string) => { picker.value = next; };
+    setValue(value);
+    picker.onchange = () => change?.(picker.value);
+    return setValue;
+  }
   const input = root.querySelector('input')!;
   const button = root.querySelector('button')!;
   const list = root.querySelector('ul')!;

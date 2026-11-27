@@ -1,3 +1,5 @@
+import { nativeComposer } from './mobile/chat-composer';
+import { newId } from '../server/shared/id.mjs';
 import { onIPhone } from './mobile/platform';
 import { escapeHTML } from './html';
 import { icon } from './icons';
@@ -93,6 +95,8 @@ async function askBook(book: BookSummary, input: object, signal: AbortSignal, st
 export class BookChatPanel {
   open = false;
   private draft = '';
+  readonly composerSession = newId();
+  private composerRevision = 0;
   private turns: { question: string; reply: Reply }[] = [];
   private pending = '';
   private steps = new Map<number, LookupStep>();
@@ -162,9 +166,19 @@ export class BookChatPanel {
     } finally {
       if (!this.lifetime.signal.aborted) {
         this.sync();
-        if (this.open && this.historyState === 'ready') document.querySelector<HTMLElement>('#chat-input')?.focus({ preventScroll: true });
+        if (this.open && this.historyState === 'ready') this.focusInput();
       }
     }
+  }
+
+  focusInput(): void {
+    if (nativeComposer) nativeComposer.postMessage({ action: 'focus', session: this.composerSession });
+    else document.querySelector<HTMLElement>('#chat-input')?.focus({ preventScroll: true });
+  }
+
+  acceptNativeDraft(text: string, revision: number): void {
+    this.composerRevision = revision;
+    this.draft = text;
   }
 
   panelHTML(): string {
@@ -172,15 +186,21 @@ export class BookChatPanel {
       <header class="chat-heading"><h2 id="chat-title">${icon('chat')}对话</h2><button class="chat-clear" data-action="clear-chat" title="清理本书聊天，开始新对话">${icon('trash')}<span>清理聊天</span></button><button class="icon-button" data-action="chat" aria-label="关闭对话">${icon('close')}</button></header>
       <div class="chat-history" role="log" aria-label="本书对话" aria-live="polite"></div>
       <div class="chat-bottom"><div class="chat-selection" hidden><div><strong>已选正文</strong><p></p></div><button class="icon-button" data-action="clear-passage" aria-label="移除选段">${icon('close')}</button></div><p class="chat-error" role="alert" hidden></p>
-      <form id="chat-form"><textarea rows="2" maxlength="2000" id="chat-input" aria-label="关于本书的问题" placeholder="输入关于本书的问题…">${escapeHTML(this.draft)}</textarea>
-      <button class="chat-send" type="submit" aria-label="发送消息" title="发送消息">${icon('arrow')}</button></form></div>
+      ${nativeComposer ? '' : `<form id="chat-form"><textarea rows="2" maxlength="2000" id="chat-input" aria-label="关于本书的问题" placeholder="输入关于本书的问题…">${escapeHTML(this.draft)}</textarea>
+      <button class="chat-send" type="submit" aria-label="发送消息" title="发送消息">${icon('arrow')}</button></form>`}</div>
     </aside>`;
   }
 
   setDraft(text: string): void {
     this.draft = text;
+    const canSend = this.historyState === 'ready' && !this.pending && !this.passageTooLong;
+    if (nativeComposer && this.open && !this.lifetime.signal.aborted && !document.querySelector('.reader-drawer')) {
+      nativeComposer.postMessage({ action: 'show', session: this.composerSession, draft: text,
+        revision: this.composerRevision, editable: this.historyState !== 'clearing', canSend,
+        theme: document.querySelector<HTMLElement>('.reader-shell')?.dataset.theme });
+    }
     const button = document.querySelector<HTMLButtonElement>('.chat-send');
-    if (button) button.disabled = this.historyState !== 'ready' || !text.trim() || !!this.pending || this.passageTooLong;
+    if (button) button.disabled = !canSend || !text.trim();
   }
 
   private get passageTooLong(): boolean {
@@ -211,9 +231,11 @@ export class BookChatPanel {
     if (this.historyState === 'error') parts.push('<button class="chapter-button" data-action="retry-history">重新读取</button>');
     history.innerHTML = parts.join('') || '<p class="chat-hint">想聊聊书里的哪一段？</p>';
     history.scrollTop = history.scrollHeight;
-    const input = document.querySelector<HTMLTextAreaElement>('#chat-input')!;
-    input.value = this.draft;
-    input.disabled = this.historyState === 'clearing';
+    const input = document.querySelector<HTMLTextAreaElement>('#chat-input');
+    if (input) {
+      input.value = this.draft;
+      input.disabled = this.historyState === 'clearing';
+    }
     const clear = document.querySelector<HTMLButtonElement>('[data-action="clear-chat"]')!;
     clear.disabled = this.historyState !== 'ready' || !this.conversation;
     clear.querySelector('span')!.textContent = this.historyState === 'clearing' ? '正在清理…' : '清理聊天';

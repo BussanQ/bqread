@@ -7,7 +7,7 @@ export function modelField(): string {
     <label class="u031-lab" for="provider-model">模型</label>
     <div class="u429-f">${icon('search')}<input class="u429-in" id="provider-model" name="model" required
       role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="provider-model-list"
-      placeholder="选择或输入模型 ID" autocomplete="off" spellcheck="false">
+      placeholder="选择或输入模型 ID" autocomplete="off" autocapitalize="none" spellcheck="false">
       <kbd class="u429-kb" aria-hidden="true">${/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘K' : 'Ctrl K'}</kbd></div>
     <div class="u429-dd" inert><i class="u429-pill" aria-hidden="true"></i><div class="u429-lb" id="provider-model-list" role="listbox" aria-label="模型候选"></div></div>
     <span class="u429-live" role="status"></span>

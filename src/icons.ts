@@ -6,6 +6,8 @@ const paths = {
   arrow: '<path d="M4 12h15m-5-5 5 5-5 5"/>',
   left: '<path d="m14 6-6 6 6 6"/>',
   right: '<path d="m10 6 6 6-6 6"/>',
+  arrowUpToLine: '<path d="M5 4h14M12 20V8m-5 5 5-5 5 5"/>',
+  arrowDownToLine: '<path d="M5 20h14M12 4v12m-5-5 5 5 5-5"/>',
   search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   shield: '<path d="m12 3 8 3v6c0 4.5-8 9-8 9s-8-4.5-8-9V6l8-3Z"/><path d="m8.5 12 2.5 2.5 4.5-5"/>',

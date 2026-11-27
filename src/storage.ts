@@ -1,9 +1,11 @@
+import { removeBookAnnotations } from './annotations';
 import { onIPhone } from './mobile/platform';
 import type { Book, BookSummary, ChapterInfo, ChapterWindow } from './types';
 
 const PROGRESS_KEY = 'modu-progress';
 
 interface SavedProgress {
+  readingLocation?: number;
   location: number;
   lastReadAt: number | null;
 }
@@ -36,7 +38,7 @@ async function responseJSON(response: Response): Promise<unknown> {
 
 export function restoreReadingProgress(books: BookSummary[]): BookSummary[] {
   const progress = readProgress();
-  return books.map((book) => ({ ...book, location: progress[book.id]?.location ?? 0, lastReadAt: progress[book.id]?.lastReadAt ?? null }));
+  return books.map((book) => ({ ...book, location: progress[book.id]?.location ?? 0, readingLocation: progress[book.id]?.readingLocation, lastReadAt: progress[book.id]?.lastReadAt ?? null }));
 }
 
 async function legacyBooks(): Promise<IDBDatabase | null> {
@@ -117,9 +119,9 @@ export async function putBook(book: Book): Promise<BookSummary> {
   return await responseJSON(response) as BookSummary;
 }
 
-export function saveReadingProgress(book: Pick<Book, 'id' | 'location' | 'lastReadAt'>): void {
+export function saveReadingProgress(book: Pick<BookSummary, 'id' | 'location' | 'readingLocation' | 'lastReadAt'>): void {
   const progress = readProgress();
-  progress[book.id] = { location: book.location, lastReadAt: book.lastReadAt };
+  progress[book.id] = { location: book.location, readingLocation: book.readingLocation, lastReadAt: book.lastReadAt };
   saveProgress(progress);
 }
 
@@ -145,6 +147,7 @@ export async function deleteStoredBook(id: string, sample = false): Promise<void
     await responseJSON(response);
   }
   const progress = readProgress();
+  removeBookAnnotations(id);
   delete progress[id];
   saveProgress(progress);
 }

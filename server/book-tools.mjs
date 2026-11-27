@@ -1,3 +1,4 @@
+import { chapterOrder } from './shared/chapter-order.mjs';
 import samples from './sample-books.json' with { type: 'json' };
 
 const pageSize = 8000;
@@ -38,14 +39,17 @@ export async function openBook(store, id, sample) {
   if (sample) {
     const book = samples.find((entry) => entry.id === id);
     if (!book) throw Object.assign(new Error('试读书籍不存在。'), { status: 404 });
-    return { title: book.title, author: book.author, chapters: book.chapters,
-      readChapter: async (index) => book.chapters[index].content,
+    const chapters = chapterOrder(book.chapters).map(index => book.chapters[index]);
+    return { title: book.title, author: book.author, chapters,
+      readChapter: async (index) => chapters[index].content,
       readText: async () => book.chapters.map(({ title, content }) => title + '\n' + content).join('\n') };
   }
   const summary = await store.read(id, 'summary');
-  const chapters = await store.read(id, 'toc');
+  const source = await store.read(id, 'toc');
+  const order = chapterOrder(source);
+  const chapters = order.map(index => source[index]);
   return { title: summary.title, author: summary.author, chapters,
-    readChapter: (index) => store.read(id, 'chapter', index),
+    readChapter: (index) => store.read(id, 'chapter', order[index]),
     readText: async () => (await store.read(id, 'export')).content };
 }
 

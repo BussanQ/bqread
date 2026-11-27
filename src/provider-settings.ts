@@ -1,3 +1,5 @@
+// Lucian UX/UI Prompt #044 · MIT License (c) 2026 Seokwoooo · https://lucianlabs.dev/uxui-prompt/#044
+// Lucian UX/UI Prompt #066 · MIT License (c) 2026 Seokwoooo · https://lucianlabs.dev/uxui-prompt/#066
 // Lucian UX/UI Prompt #403 · MIT License (c) 2026 Seokwoooo · https://lucianlabs.dev/uxui-prompt/#403
 // Lucian UX/UI Prompt #072 · MIT License (c) 2026 Seokwoooo · https://lucianlabs.dev/uxui-prompt/#072
 import './ui/provider-settings.css';
@@ -64,7 +66,21 @@ export async function openProviderSettings(): Promise<void> {
   const live = dialog.querySelector<HTMLElement>('.u403-live')!;
   let state: Settings;
   let feedbackTimer: ReturnType<typeof setTimeout>;
-  dialog.addEventListener('close', () => { clearTimeout(feedbackTimer); dialog.remove(); }, { once: true });
+  const viewport = onIPhone ? window.visualViewport : null;
+  function fitViewport() {
+    if (!viewport) return;
+    dialog.style.setProperty('--provider-top', viewport.offsetTop + 'px');
+    dialog.style.setProperty('--provider-height', viewport.height + 'px');
+  }
+  viewport?.addEventListener('resize', fitViewport);
+  viewport?.addEventListener('scroll', fitViewport);
+  fitViewport();
+  dialog.addEventListener('close', () => {
+    viewport?.removeEventListener('resize', fitViewport);
+    viewport?.removeEventListener('scroll', fitViewport);
+    clearTimeout(feedbackTimer);
+    dialog.remove();
+  }, { once: true });
   const closeButton = dialog.querySelector<HTMLButtonElement>('[data-close]')!;
   closeButton.onclick = () => dialog.close();
   dialog.querySelector<HTMLButtonElement>('[data-dismiss]')!.onclick = () => {
@@ -98,7 +114,12 @@ export async function openProviderSettings(): Promise<void> {
     fields.disabled = true;
     alert.hidden = true;
     trigger.setAttribute('aria-busy', 'true');
-    if (saving) trigger.classList.add('is-busy');
+    if (saving) {
+      clearTimeout(feedbackTimer);
+      trigger.classList.remove('ok');
+      trigger.classList.add('busy');
+      trigger.querySelector('.u066-tx')!.textContent = '正在保存…';
+    }
     live.textContent = '正在更新设置…';
     try {
       state = await settingsRequest(input);
@@ -106,41 +127,74 @@ export async function openProviderSettings(): Promise<void> {
       render();
       live.textContent = success;
       if (saving) {
-        const saved = body.querySelector<HTMLButtonElement>('.u403-go')!;
-        saved.classList.add('is-ok');
+        const saved = body.querySelector<HTMLButtonElement>('[type=submit]')!;
+        saved.classList.add('ok');
+        const label = saved.querySelector('.u066-tx')!;
+        label.textContent = '已保存并启用';
+        const model = document.createElement('small');
+        model.textContent = state.profiles.find(profile => profile.id === state.active)?.model ?? '';
+        label.append(model);
         clearTimeout(feedbackTimer);
-        feedbackTimer = setTimeout(() => saved.classList.remove('is-ok'), 1600);
+        feedbackTimer = setTimeout(() => {
+          saved.classList.remove('ok');
+          label.textContent = '保存并使用';
+        }, 2400);
       }
-      body.querySelector<HTMLButtonElement>('[data-select=connection] button')!.focus({ preventScroll: true });
+      focusConnectionPicker();
     } catch (error) {
       if (!dialog.open) return;
       fields.disabled = false;
       trigger.removeAttribute('aria-busy');
-      trigger.classList.remove('is-busy');
+      if (saving) {
+        trigger.classList.remove('busy');
+        trigger.querySelector('.u066-tx')!.textContent = '保存并使用';
+      }
       live.textContent = '';
       trigger.focus({ preventScroll: true });
       report(error);
     }
   }
+  function focusConnectionPicker() {
+    const name = state.profiles.length ? 'connection' : 'preset';
+    body.querySelector<HTMLElement>(`[data-select=${name}] :is(select, button)`)!.focus({ preventScroll: true });
+  }
   function render(editId = state.active) {
     const edit = state.profiles.find(p => p.id === editId);
     const current = state.profiles.find(p => p.id === state.active);
-    const status = current ? current.name + ' · ' + current.model : state.environmentModel || '尚未配置';
+    const model = current?.model || state.environmentModel;
     body.innerHTML = `<fieldset aria-label="提供商设置">
-      <div class="provider-current"><div><span>当前模型</span><strong>${escapeHTML(status)}</strong></div>
+      <div class="provider-fields"><div class="provider-current">${icon('chat')}
+        <div class="provider-summary"><span>当前连接</span><strong>${escapeHTML(current?.name ?? (model ? '服务端环境配置' : '尚未配置'))}</strong>
+          ${model ? `<small>${escapeHTML(model)}</small>` : ''}</div>
         ${state.active && !onIPhone ? '<button class="u072-again" type="button" data-env>使用服务端环境配置</button>' : ''}</div>
-      ${selectField('connection', '已保存的连接')}
-      <form><div class="provider-grid">${selectField('preset', '提供商')}${selectField('protocol', 'API 协议')}</div>
+      ${state.profiles.length ? selectField('connection', '已保存的连接') : ''}
+      <form id="provider-form">${selectField('preset', '提供商')}
         ${textField('name', '连接名称', 'required maxlength="100"')}
-        ${textField('baseURL', 'API 基础地址', 'type="url" required spellcheck="false"')}
-        ${textField('apiKey', 'API 密钥', 'type="password" autocomplete="new-password" spellcheck="false" aria-describedby="provider-key-hint"', eye)}
+        ${textField('apiKey', 'API 密钥', 'type="password" autocomplete="new-password" autocapitalize="none" spellcheck="false" aria-describedby="provider-key-hint"', eye)}
         <p id="provider-key-hint"></p>
         ${modelField()}
+        <div class="u044-it"><button class="u044-q" id="provider-interface-toggle" type="button" aria-controls="provider-interface" aria-expanded="false">
+          ${icon('settings')}<span class="u044-t">接口设置</span><span class="u044-pm" aria-hidden="true"></span></button>
+          <div class="u044-body" id="provider-interface" role="region" aria-labelledby="provider-interface-toggle" inert><div><div class="u044-a">
+            ${selectField('protocol', 'API 协议')}
+            ${textField('baseURL', 'API 基础地址', 'type="url" required autocapitalize="none" spellcheck="false"')}
+          </div></div></div>
+        </div></form></div>
         <div class="provider-actions">${edit ? '<button type="button" class="u072-again" data-remove>移除连接</button>' : ''}
-          <button class="u403-go" type="submit"><span>保存并使用</span><i aria-hidden="true"></i><svg viewBox="0 0 22 22" aria-hidden="true"><path d="M5.5 11.5l4 4L17 7.5"/></svg></button>
-        </div></form></fieldset>`;
+          <button class="u066-b" type="submit" form="provider-form"><span class="u066-tx">保存并使用</span>
+            <span class="u066-st" aria-hidden="true"><i></i><svg viewBox="0 0 22 22"><path d="M5 11.5l4 4L17 7"/></svg></span></button>
+        </div></fieldset>`;
     const form = body.querySelector('form')!;
     const field = (name: string) => form.elements.namedItem(name) as HTMLInputElement;
+    const disclosure = form.querySelector<HTMLButtonElement>('.u044-q')!;
+    const panel = form.querySelector<HTMLElement>('.u044-body')!;
+    function showInterface(open: boolean) {
+      disclosure.parentElement!.classList.toggle('open', open);
+      disclosure.setAttribute('aria-expanded', String(open));
+      panel.inert = !open;
+    }
+    disclosure.onclick = () => showInterface(panel.inert);
+    field('baseURL').addEventListener('invalid', () => showInterface(true));
     const initialPreset = presets.find(p => p.id === edit?.preset)?.id ?? (edit ? 'custom' : 'openai');
     const sameConnection = () => edit && initialPreset === field('preset').value &&
       edit.baseURL === field('baseURL').value.trim().replace(/\/+$/, '');
@@ -148,14 +202,16 @@ export async function openProviderSettings(): Promise<void> {
       form.querySelector('#provider-key-hint')!.textContent = edit?.hasKey && sameConnection() ? '已保存密钥，留空沿用。' : (onIPhone ? '密钥保存在本机钥匙串。对话时，问题和查阅的原文会直接发给所选提供商。' : '本地免密服务可留空。');
     };
 
-    bindSelect(body, 'connection', [
-      { value: '', label: '添加新连接' },
-      ...state.profiles.map(p => ({ value: p.id, label: p.name, detail: p.model })),
-    ], edit?.id ?? '', id => {
-      alert.hidden = true;
-      render(id);
-      body.querySelector<HTMLButtonElement>('[data-select=connection] button')!.focus({ preventScroll: true });
-    });
+    if (state.profiles.length) {
+      bindSelect(body, 'connection', [
+        { value: '', label: '添加新连接' },
+        ...state.profiles.map(p => ({ value: p.id, label: p.name, detail: p.model })),
+      ], edit?.id ?? '', id => {
+        alert.hidden = true;
+        render(id);
+        focusConnectionPicker();
+      });
+    }
     const setProtocol = bindSelect(body, 'protocol', protocols, edit?.protocol ?? protocols[0]!.value);
     const reveal = form.querySelector<HTMLButtonElement>('.u403-eye')!;
     const setVisible = (show: boolean) => {
@@ -166,6 +222,7 @@ export async function openProviderSettings(): Promise<void> {
     let preset = presets.find(p => p.id === initialPreset)!;
     bindSelect(body, 'preset', presets.map(p => ({ value: p.id, label: p.name })), initialPreset, id => {
       preset = presets.find(p => p.id === id)!;
+      showInterface(id === 'custom');
       field('name').value = preset.name;
       setProtocol(preset.protocol);
       field('baseURL').value = preset.baseURL;
@@ -174,6 +231,7 @@ export async function openProviderSettings(): Promise<void> {
       setVisible(false);
       updateKeyHint();
     });
+    showInterface(initialPreset === 'custom' || Boolean(edit && (edit.protocol !== preset.protocol || edit.baseURL !== preset.baseURL)));
     field('name').value = edit?.name ?? preset.name;
     field('baseURL').value = edit?.baseURL ?? preset.baseURL;
     field('model').value = edit?.model ?? '';
@@ -181,7 +239,7 @@ export async function openProviderSettings(): Promise<void> {
     updateKeyHint();
     field('baseURL').oninput = updateKeyHint;
     bindModel(form, () => preset.models);
-    const save = form.querySelector<HTMLButtonElement>('[type=submit]')!;
+    const save = body.querySelector<HTMLButtonElement>('[type=submit]')!;
     form.onsubmit = event => {
       event.preventDefault();
       const values = Object.fromEntries(new FormData(form));

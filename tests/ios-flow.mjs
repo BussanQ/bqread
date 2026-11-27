@@ -15,7 +15,7 @@ const methods = {
 };
 const browser = await chromium.launch();
 try {
-  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  const page = await browser.newPage({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
   await page.exposeFunction('bridgeCall', (plugin, method, args) => {
     if (plugin === 'CapacitorSQLite') {
       if (method === 'execute') { db.exec(args.statements); return { changes: {} }; }
@@ -48,7 +48,9 @@ try {
     return { status: 200, data: { choices: [{ finish_reason: message.tool_calls ? 'tool_calls' : 'stop', message }] } };
   });
   await page.addInitScript((methods) => {
-    window.webkit = { messageHandlers: { bridge: {} } };
+    window.webkit = { messageHandlers: { bridge: {}, chatComposer: {
+      postMessage(message) { if (message.action === 'show') window.composerState = message; },
+    } } };
     window.Capacitor = {
       nativePromise: window.bridgeCall,
       PluginHeaders: Object.entries(methods).map(([name, entries]) => ({ name, methods: entries.map(name => ({ name, rtype: 'promise' })) })),
@@ -67,29 +69,65 @@ try {
   await page.goto('https://reader.test/');
   await page.locator('[data-action=import]').first().click();
   await page.locator('#novel-file').setInputFiles({ name: '旅行.txt', mimeType: 'text/plain',
-    buffer: Buffer.from('第一章 出发\n他离开小镇。\n第二章 抵达\n他在海边。') });
+    buffer: Buffer.from('番外二：回忆\n旧日的旅行。\n第二章抵达了？\n他在海边。\n番外：后来\n他回到小镇。\n第０１章　出发\n' + '他离开小镇。\n'.repeat(160)) });
   await page.locator('[data-action=submit-import]').click();
   const book = page.getByRole('button', { name: '阅读《旅行》' });
   await book.click();
-  await page.locator('[data-action=next]').click();
-  await expect(page.locator('.reading-chapter-title')).toHaveText('第二章 抵达');
+  await expect(page.locator('.reading-chapter-title')).toHaveText('第０１章　出发');
+  const client = await page.context().newCDPSession(page);
+  await client.send('Input.synthesizePinchGesture', { x: 195, y: 400, scaleFactor: 2, gestureSourceType: 'touch' });
+  const viewportScale = () => page.evaluate(() => visualViewport.scale);
+  assert.equal(await viewportScale(), 1);
+
+  const scrollY = () => page.evaluate(() => window.scrollY);
+  const positions = [await scrollY()];
+  for (let i = 0; i < 3; i++) {
+    await page.touchscreen.tap(382, 420);
+    positions.push(await scrollY());
+    assert.ok(positions[i + 1] - positions[i] > 500);
+  }
+  await page.waitForTimeout(350);
+  assert.equal(await scrollY(), positions[3]);
+  for (const expected of positions.slice(0, -1).reverse()) {
+    await page.touchscreen.tap(8, 420);
+    assert.equal(await scrollY(), expected);
+  }
+  assert.equal(await viewportScale(), 1);
+  await page.getByRole('button', { name: '章节目录', exact: true }).click();
+  await expect(page.locator('.chapter-link span:last-child')).toHaveText(['第０１章　出发', '第二章抵达了？', '番外：后来', '番外二：回忆']);
+  await page.getByRole('button', { name: '关闭目录' }).click();
+  await page.getByRole('button', { name: '下一章', exact: true }).click();
+  await expect(page.locator('.reading-content')).toHaveText('他在海边。');
+  await expect(page.locator('.reading-chapter-title')).toHaveText('第二章抵达了？');
   await page.reload();
   await book.click();
-  await expect(page.locator('.reading-chapter-title')).toHaveText('第二章 抵达');
+  await expect(page.locator('.reading-chapter-title')).toHaveText('第二章抵达了？');
   await page.getByRole('button', { name: '返回书架' }).click();
   await page.getByRole('button', { name: 'AI 提供商', exact: true }).click();
-  await page.getByRole('button', { name: /^API 协议 / }).click();
-  await page.getByRole('option', { name: 'OpenAI Chat Completions' }).click();
+  await page.getByRole('combobox', { name: '提供商', exact: true }).selectOption('deepseek');
+  await expect(page.getByLabel('连接名称')).toHaveValue('DeepSeek');
+  await page.getByRole('button', { name: '接口设置' }).tap();
+  await page.getByRole('combobox', { name: 'API 协议' }).selectOption('chat-completions');
+  // A short viewport exercises the form while the fixed actions are competing for space.
+  await page.setViewportSize({ width: 375, height: 370 });
   await page.getByLabel('API 基础地址').fill('https://model.invalid/v1');
   await page.getByLabel('API 密钥', { exact: true }).fill('test-only');
   await page.getByRole('combobox', { name: '模型', exact: true }).fill('fixture');
-  await page.getByRole('button', { name: '保存并使用' }).click();
+  const actions = page.getByRole('button', { name: '保存并使用' });
+  await expect(actions).toBeInViewport({ ratio: 1 });
+  await expect(page.getByRole('button', { name: '关闭 AI 提供商设置' })).toBeInViewport({ ratio: 1 });
+  assert.ok(await page.locator('.provider-fields').evaluate(el => el.scrollTop > 0 && el.scrollWidth === el.clientWidth));
+  await actions.tap();
+  await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.locator('.provider-current')).toContainText('fixture');
   await page.getByRole('button', { name: '关闭 AI 提供商设置' }).click();
   await book.click();
   await page.locator('.chat-toggle').click();
-  await page.locator('#chat-input').fill('他在哪里？');
-  await page.locator('.chat-send').click();
+  await expect(page.locator('#chat-input')).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => window.composerState?.canSend)).toBe(true);
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('modu-composer', { detail: {
+    session: window.composerState.session, text: '他在哪里？', revision: 1, submit: true,
+  } })));
   await expect(page.locator('.chat-answer')).toContainText('他在海边');
   assert.match(calls[1].messages.at(-1).content, /在海边/);
   await page.reload();

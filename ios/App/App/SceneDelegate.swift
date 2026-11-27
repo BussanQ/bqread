@@ -4,6 +4,7 @@ import Capacitor
 // Keep fixed and sticky web controls inside UIKit's usable area, including after rotation.
 private final class ReaderWindowController: UIViewController {
     private let reader = CAPBridgeViewController()
+    private let composer = ChatComposer(frame: .zero)
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -12,10 +13,29 @@ private final class ReaderWindowController: UIViewController {
         let content = reader.view!
         content.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(content)
+        composer.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(composer)
+        composer.webView = reader.webView
+        reader.webView?.configuration.userContentController.add(composer, name: "chatComposer")
         let area = view.safeAreaLayoutGuide
+        let fullHeight = content.bottomAnchor.constraint(equalTo: area.bottomAnchor)
+        let aboveComposer = content.bottomAnchor.constraint(equalTo: composer.topAnchor)
+        composer.visibilityChanged = { [weak self] visible in
+            if visible {
+                fullHeight.isActive = false
+                aboveComposer.isActive = true
+            } else {
+                aboveComposer.isActive = false
+                fullHeight.isActive = true
+            }
+            self?.view.layoutIfNeeded()
+        }
         NSLayoutConstraint.activate([
             content.topAnchor.constraint(equalTo: area.topAnchor),
-            content.bottomAnchor.constraint(equalTo: area.bottomAnchor),
+            fullHeight,
+            composer.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
+            composer.leadingAnchor.constraint(equalTo: area.leadingAnchor),
+            composer.trailingAnchor.constraint(equalTo: area.trailingAnchor),
             content.leadingAnchor.constraint(equalTo: area.leadingAnchor),
             content.trailingAnchor.constraint(equalTo: area.trailingAnchor)
         ])
