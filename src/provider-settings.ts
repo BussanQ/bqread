@@ -1,6 +1,7 @@
 // Lucian UX/UI Prompt #403 · MIT License (c) 2026 Seokwoooo · https://lucianlabs.dev/uxui-prompt/#403
 // Lucian UX/UI Prompt #072 · MIT License (c) 2026 Seokwoooo · https://lucianlabs.dev/uxui-prompt/#072
 import './ui/provider-settings.css';
+import { onIPhone } from './mobile/platform';
 import { selectField, bindSelect } from './ui/provider-select';
 import { modelField, bindModel } from './ui/provider-model';
 import presets from './provider-presets.json';
@@ -16,9 +17,10 @@ interface Profile {
   baseURL: string;
   hasKey: boolean;
 }
-interface Settings { active: string; profiles: Profile[]; environmentModel: string }
+export interface Settings { active: string; profiles: Profile[]; environmentModel: string }
 
 async function settingsRequest(input?: object): Promise<Settings> {
+  if (onIPhone) return (await import('./mobile/providers')).providerSettings(input);
   const response = await fetch('/api/providers', input ? {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
   } : {});
@@ -126,7 +128,7 @@ export async function openProviderSettings(): Promise<void> {
     const status = current ? current.name + ' · ' + current.model : state.environmentModel || '尚未配置';
     body.innerHTML = `<fieldset aria-label="提供商设置">
       <div class="provider-current"><div><span>当前模型</span><strong>${escapeHTML(status)}</strong></div>
-        ${state.active ? '<button class="u072-again" type="button" data-env>使用服务端环境配置</button>' : ''}</div>
+        ${state.active && !onIPhone ? '<button class="u072-again" type="button" data-env>使用服务端环境配置</button>' : ''}</div>
       ${selectField('connection', '已保存的连接')}
       <form><div class="provider-grid">${selectField('preset', '提供商')}${selectField('protocol', 'API 协议')}</div>
         ${textField('name', '连接名称', 'required maxlength="100"')}
@@ -143,7 +145,7 @@ export async function openProviderSettings(): Promise<void> {
     const sameConnection = () => edit && initialPreset === field('preset').value &&
       edit.baseURL === field('baseURL').value.trim().replace(/\/+$/, '');
     const updateKeyHint = () => {
-      form.querySelector('#provider-key-hint')!.textContent = edit?.hasKey && sameConnection() ? '已保存密钥，留空沿用。' : '本地免密服务可留空。';
+      form.querySelector('#provider-key-hint')!.textContent = edit?.hasKey && sameConnection() ? '已保存密钥，留空沿用。' : (onIPhone ? '密钥保存在本机钥匙串。对话时，问题和查阅的原文会直接发给所选提供商。' : '本地免密服务可留空。');
     };
 
     bindSelect(body, 'connection', [

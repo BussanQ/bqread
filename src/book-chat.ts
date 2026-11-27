@@ -1,3 +1,4 @@
+import { onIPhone } from './mobile/platform';
 import { escapeHTML } from './html';
 import { icon } from './icons';
 import type { BookSummary } from './types';
@@ -61,6 +62,34 @@ interface Passage {
   preview: string;
 }
 
+async function localChat() {
+  return (await import('./mobile/chat')).mobileChat();
+}
+
+async function historyRequest(book: BookSummary, signal: AbortSignal, conversation?: string) {
+  if (onIPhone) {
+    const history = await localChat();
+    return conversation ? history.clear(book.id, book.sample, conversation) : history.list(book.id, book.sample);
+  }
+  const response = await fetch(`/api/books/${encodeURIComponent(book.id)}/chat?sample=${book.sample}`, conversation
+    ? { method: 'DELETE', signal, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conversation }) }
+    : { signal });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || '对话记录不可用。');
+  return data;
+}
+
+async function askBook(book: BookSummary, input: object, signal: AbortSignal, step: (value: LookupStep) => void): Promise<TurnResult> {
+  if (onIPhone) return (await localChat()).ask(book.id, input, step);
+  const response = await fetch(`/api/books/${encodeURIComponent(book.id)}/chat`, {
+    method: 'POST', signal, headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' },
+    body: JSON.stringify(input),
+  });
+  const reply = await readTurn(response, step);
+  if (!response.ok || !reply.answer) throw Object.assign(new Error(reply.error || '未能取得回答，请重试。'), { status: response.status });
+  return reply;
+}
+
 export class BookChatPanel {
   open = false;
   private draft = '';
@@ -96,9 +125,8 @@ export class BookChatPanel {
     this.error = '';
     this.sync();
     try {
-      const response = await fetch(`/api/books/${encodeURIComponent(this.book.id)}/chat?sample=${this.book.sample}`, { signal: this.lifetime.signal });
-      const data = await response.json();
-      if (!response.ok || !Array.isArray(data.turns)) throw new Error(data.error || '对话记录读取失败。');
+      const data = await historyRequest(this.book, this.lifetime.signal);
+      if (!Array.isArray(data.turns)) throw new Error('对话记录读取失败。');
       if (this.conversation && data.conversation !== this.conversation) this.resetDraft();
       this.turns = data.turns;
       this.conversation = data.conversation;
@@ -121,12 +149,8 @@ export class BookChatPanel {
     this.error = '';
     this.sync();
     try {
-      const response = await fetch(`/api/books/${encodeURIComponent(this.book.id)}/chat?sample=${this.book.sample}`, {
-        method: 'DELETE', signal: this.lifetime.signal, headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conversation: this.conversation }),
-      });
-      const data = await response.json();
-      if (!response.ok || !data.conversation) throw new Error(data.error || '清理聊天失败，请重试。');
+      const data = await historyRequest(this.book, this.lifetime.signal, this.conversation);
+      if (!data.conversation) throw new Error('清理聊天失败，请重试。');
       this.conversation = data.conversation;
       this.turns = [];
       this.resetDraft();
@@ -237,14 +261,9 @@ export class BookChatPanel {
     const sending = new AbortController();
     this.sending = sending;
     try {
-      const response = await fetch(`/api/books/${encodeURIComponent(this.book.id)}/chat`, {
-        method: 'POST', signal: sending.signal, headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' },
-        body: JSON.stringify({ ...turn, sample: this.book.sample, conversation: this.conversation }),
-      });
-      const reply = await readTurn(response, (step) => { if (!sending.signal.aborted) this.updateStep(step); });
+      const reply = await askBook(this.book, { ...turn, sample: this.book.sample, conversation: this.conversation },
+        sending.signal, step => { if (!sending.signal.aborted) this.updateStep(step); });
       if (sending.signal.aborted) return;
-      if (response.status === 409 && reply.error?.includes('对话已更新')) refresh = true;
-      if (!response.ok || !reply.answer) throw new Error(reply.error || '未能取得回答，请重试。');
       this.retry = null;
       this.steps.clear();
       if (this.passage === passage) this.setPassage();
@@ -252,6 +271,7 @@ export class BookChatPanel {
       else refresh = true;
     } catch (error) {
       if (sending.signal.aborted) return;
+      if (error instanceof Error && 'status' in error && error.status === 409 && error.message.includes('对话已更新')) refresh = true;
       this.retry = turn;
       for (const step of this.steps.values()) if (step.status === 'running') step.status = 'interrupted';
       if (!this.draft) this.draft = question;

@@ -1,9 +1,8 @@
+import { publicState, updateState } from './shared/provider-state.mjs';
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { decryptKey, encryptKey, loadMasterKey } from './provider-secrets.mjs';
-
-function invalid(message) { throw Object.assign(new Error(message), { status: 400 }); }
 
 const pending = new Map();
 
@@ -48,12 +47,8 @@ export function createProviders(directory, fallback) {
     }
     return state;
   }
-  function publicState(state) {
-    return { active: state.active, profiles: state.profiles.map(({ apiKey, ...profile }) => ({ ...profile, hasKey: Boolean(apiKey) })),
-      environmentModel: fallback?.model ?? process.env.BQREAD_AI_MODEL ?? '' };
-  }
   return {
-    list() { return run(async () => publicState(await read())); },
+    list() { return run(async () => publicState(await read(), fallback?.model ?? process.env.BQREAD_AI_MODEL)); },
     current() {
       return run(async () => {
         const state = await read();
@@ -65,32 +60,9 @@ export function createProviders(directory, fallback) {
     update(input) {
       return run(async () => {
         const state = await read();
-        const old = state.profiles.find(p => p.id === input?.id);
-        if (input?.id && !old) invalid('连接已不存在，请重新打开设置。');
-        if (input?.action === 'remove' && old) {
-          state.profiles = state.profiles.filter(p => p.id !== old.id);
-          if (state.active === old.id) state.active = '';
-        } else if (input?.action === 'activate' && (old || input.id === '')) {
-          state.active = input.id;
-        } else if (input?.action === 'save') {
-          const { protocol, name, model, preset, baseURL, apiKey } = input;
-          if (!['chat-completions', 'responses', 'anthropic-messages'].includes(protocol) ||
-              ![name, model, preset, baseURL].every(x => typeof x === 'string' && x.trim() && x.length <= 2048)) invalid('请填写连接名称、地址、协议和模型。');
-          let url;
-          try { url = new URL(baseURL); } catch { invalid('API 地址无效。'); }
-          if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) invalid('请输入 HTTP(S) API 基础地址。');
-          const endpoint = url.href.replace(/\/+$/, '');
-          if (apiKey !== undefined && (typeof apiKey !== 'string' || !/^[\x21-\x7e]{0,8192}$/.test(apiKey))) invalid('API 密钥格式无效。');
-          if (old?.apiKey && old.baseURL !== endpoint && apiKey === undefined) invalid('地址已变更，请重新输入该地址的密钥。');
-          const storedKey = apiKey ? encryptKey(apiKey, await encryptionKey(state)) : (apiKey ?? old?.apiKey ?? '');
-          const profile = { id: old?.id ?? randomUUID(), name: name.trim(), model: model.trim(), preset, protocol, baseURL: endpoint,
-            apiKey: storedKey };
-          if (old) Object.assign(old, profile);
-          else state.profiles.push(profile);
-          state.active = profile.id;
-        } else invalid('连接操作无效。');
+        await updateState(state, input, async value => encryptKey(value, await encryptionKey(state)));
         await write(state);
-        return publicState(state);
+        return publicState(state, fallback?.model ?? process.env.BQREAD_AI_MODEL);
       });
     },
   };

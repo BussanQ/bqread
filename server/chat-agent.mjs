@@ -21,7 +21,7 @@ export function createChatAgent(options = {}) {
     let response;
     try {
       const wire = modelRequest(config, messages, tools);
-      response = await fetch(wire.endpoint, { method: 'POST', redirect: 'error', signal,
+      response = await (options.transport ?? fetch)(wire.endpoint, { method: 'POST', redirect: 'error', signal,
         headers: wire.headers, body: JSON.stringify(wire.body) });
     } catch (error) {
       signal.throwIfAborted();
@@ -67,8 +67,7 @@ export function createChatAgent(options = {}) {
 
   return async function run({ messages, tools, execute, finish, signal }) {
     const config = (options.getConfig ? await options.getConfig() : options) ?? {};
-    const connection = { protocol: 'chat-completions', baseURL: process.env.BQREAD_AI_BASE_URL ?? 'https://api.openai.com/v1',
-      model: process.env.BQREAD_AI_MODEL, apiKey: process.env.BQREAD_AI_API_KEY, ...config };
+    const connection = { protocol: 'chat-completions', baseURL: 'https://api.openai.com/v1', ...options.defaults, ...config };
     let corrections = 0;
     let calls = 0;
     let toolCharacters = 0;

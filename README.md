@@ -107,3 +107,17 @@ npx playwright test
 ```
 
 浏览器测试使用独立的临时书库，不会改动 `~/.bqread` 中的真实书籍。测试覆盖导入、服务端文件持久化、TXT 导出、旧数据迁移、浏览器数据清除后的书籍保留、目录导航、设置与进度、删除、错误提示及 390px 布局。
+
+## iPhone 离线版
+
+iOS 工程使用 Capacitor 8，应用标识为 `com.bussanq.bqread`，部署目标为 iOS 18 及以上。使用 Node.js 22.12+ 和完整版 Xcode 26+：
+
+```sh
+npm ci
+npm run ios:sync
+npm run ios:open
+```
+
+在 Xcode 中选择 App target、签名团队和目标 iPhone，然后运行。修改前端或插件后重新执行 `npm run ios:sync`。App 自带页面资源，可直接从「文件」导入 TXT，书籍及章节保存在应用内的 SQLite 数据库。导出使用 iOS 分享面板，可选择「存储到文件」。阅读和导出均可离线使用。
+
+在书架的「AI 提供商」中填写 HTTPS 地址、模型和个人 API 密钥。配置保存在 iOS 钥匙串。提问时设备直接连接所选模型服务，问题、相关历史以及查书工具选取的原文会随请求发送；完整历史保存在本机 SQLite。关闭电脑后仍可使用，调用在线模型时手机需要联网。网页版继续使用原来的 Node 服务，两个书库独立。

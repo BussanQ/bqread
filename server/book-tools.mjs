@@ -1,4 +1,3 @@
-import { setImmediate } from 'node:timers/promises';
 import samples from './sample-books.json' with { type: 'json' };
 
 const pageSize = 8000;
@@ -144,7 +143,7 @@ export function createBookTools(book, selection, onActivity, signal) {
             if (!/\s/u.test(character)) counts.nonWhitespace++;
             if (/\p{Script=Han}/u.test(character)) counts.han++;
             if (counts.characters % 65536 === 0) {
-              await setImmediate(undefined, { signal });
+              await new Promise(resolve => setTimeout(resolve, 0));
               signal.throwIfAborted();
             }
           }

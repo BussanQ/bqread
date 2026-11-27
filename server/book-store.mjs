@@ -1,3 +1,4 @@
+import { sections } from './shared/sections.mjs';
 import { randomUUID } from 'node:crypto';
 import { open, readFile, readdir, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -6,7 +7,6 @@ import { join } from 'node:path';
 // Offsets in the directory are UTF-8 bytes. Reading progress stays in JS string units.
 const MAGIC = 'BQR1';
 const HEADER_BYTES = 12;
-const MAX_SECTION_LENGTH = 24 * 1024;
 
 async function readBytes(file, position, length) {
   const buffer = Buffer.alloc(length);
@@ -24,23 +24,11 @@ function indexBook(book) {
   const texts = [];
   let offset = 0;
   const chapters = book.chapters?.length ? book.chapters : [{ title: '全文', start: 0, content: book.content }];
-  for (const chapter of chapters) {
-    let start = 0;
-    let part = 0;
-    do {
-      let end = Math.min(start + MAX_SECTION_LENGTH, chapter.content.length);
-      if (end < chapter.content.length) {
-        const newline = chapter.content.slice(start, end).lastIndexOf('\n');
-        if (newline >= MAX_SECTION_LENGTH / 2) end = start + newline + 1;
-        else if (/[\uD800-\uDBFF]/.test(chapter.content[end - 1])) end--;
-      }
-      const text = Buffer.from(chapter.content.slice(start, end));
-      const title = chapter.content.length > MAX_SECTION_LENGTH ? `${chapter.title}（第 ${++part} 节）` : chapter.title;
-      entries.push({ title, start: chapter.start + start, length: end - start, offset, bytes: text.length });
-      texts.push(text);
-      offset += text.length;
-      start = end;
-    } while (start < chapter.content.length);
+  for (const section of sections(chapters)) {
+    const bytes = Buffer.from(section.text);
+    entries.push({ title: section.title, start: section.start, length: section.text.length, offset, bytes: bytes.length });
+    texts.push(bytes);
+    offset += bytes.length;
   }
   const { id, title, author, addedAt, cover } = book;
   const summary = { id, title, author, addedAt, cover, sample: false, location: 0, lastReadAt: null,

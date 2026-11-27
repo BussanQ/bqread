@@ -1,7 +1,7 @@
-@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap');
+@import '@fontsource-variable/geist';
 
 :root {
-  font-family: 'Geist', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-family: 'Geist Variable', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   color: #2e342e;
   background: #f8f7f3;
   font-synthesis: none;

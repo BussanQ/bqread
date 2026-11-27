@@ -1,6 +1,6 @@
 import { createBook } from './parser';
 import type { Book, CoverTheme } from './types';
-import samples from '../server/sample-books.json';
+import samples from '../server/sample-books.json' with { type: 'json' };
 
 export function sampleBooks(): Book[] {
   return samples.map((sample, index) => {

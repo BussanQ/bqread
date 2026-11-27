@@ -1,3 +1,4 @@
+import { onIPhone } from './mobile/platform';
 import type { Book, BookSummary, ChapterInfo, ChapterWindow } from './types';
 
 const PROGRESS_KEY = 'modu-progress';
@@ -20,7 +21,7 @@ function saveProgress(progress: Record<string, SavedProgress>): void {
   try {
     localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress));
   } catch {
-    throw new Error('阅读进度保存失败，请检查浏览器的存储权限。');
+    throw new Error('阅读进度保存失败，请检查存储权限。');
   }
 }
 
@@ -85,21 +86,29 @@ async function migrateLegacyBooks(existing: BookSummary[]): Promise<void> {
   });
 }
 
+async function mobileLibrary() {
+  return (await import('./mobile/device')).library();
+}
+
 export async function getBooks(): Promise<BookSummary[]> {
+  if (onIPhone) return (await (await mobileLibrary()).list()).sort((a, b) => b.addedAt - a.addedAt);
   const books = await responseJSON(await fetch('/api/books')) as BookSummary[];
   await migrateLegacyBooks(books);
   return books.sort((a, b) => b.addedAt - a.addedAt);
 }
 
 export async function getContents(id: string, signal: AbortSignal): Promise<ChapterInfo[]> {
+  if (onIPhone) return (await mobileLibrary()).toc(id);
   return await responseJSON(await fetch(`/api/books/${encodeURIComponent(id)}/toc`, { signal })) as ChapterInfo[];
 }
 
 export async function getChapterWindow(id: string, center: number, signal: AbortSignal): Promise<ChapterWindow> {
+  if (onIPhone) return (await mobileLibrary()).window(id, center);
   return await responseJSON(await fetch(`/api/books/${encodeURIComponent(id)}/chapters?center=${center}`, { signal })) as ChapterWindow;
 }
 
 export async function putBook(book: Book): Promise<BookSummary> {
+  if (onIPhone) return (await mobileLibrary()).put(book);
   const response = await fetch('/api/books', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -115,6 +124,7 @@ export function saveReadingProgress(book: Pick<Book, 'id' | 'location' | 'lastRe
 }
 
 export async function exportBook(book: BookSummary): Promise<void> {
+  if (onIPhone) return (await import('./mobile/device')).shareBook(book);
   const response = await fetch(`/api/books/${encodeURIComponent(book.id)}/export`);
   if (!response.ok) await responseJSON(response);
   const url = URL.createObjectURL(await response.blob());
@@ -128,7 +138,9 @@ export async function exportBook(book: BookSummary): Promise<void> {
 }
 
 export async function deleteStoredBook(id: string, sample = false): Promise<void> {
-  if (!sample) {
+  if (onIPhone) {
+    await (await import('./mobile/chat')).removeBook(id, sample);
+  } else if (!sample) {
     const response = await fetch(`/api/books/${encodeURIComponent(id)}`, { method: 'DELETE' });
     await responseJSON(response);
   }

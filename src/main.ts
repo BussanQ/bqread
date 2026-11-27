@@ -1,3 +1,4 @@
+import { onIPhone } from './mobile/platform';
 import { BookChatPanel } from './book-chat';
 import { escapeHTML } from './html';
 import './style.css';
@@ -156,7 +157,7 @@ function shelf(): string {
     <section class="shelf-section" aria-labelledby="shelf-title"><div class="shelf-heading"><div class="shelf-title-group"><h2 class="shelf-title" id="shelf-title">我的书架</h2><span class="book-count" id="book-count" role="status">${resultCount()}</span></div>${shelfSearch(search)}</div>
     <div class="filter-row" role="group" aria-label="按阅读状态筛选"><button class="filter-button title-4 ${filter === 'all' ? 'active' : ''}" data-action="filter" data-filter="all" aria-pressed="${filter === 'all'}">全部书籍 <span class="filter-count">${books.length}</span></button><button class="filter-button title-4 ${filter === 'reading' ? 'active' : ''}" data-action="filter" data-filter="reading" aria-pressed="${filter === 'reading'}">正在阅读 <span class="filter-count">${readCount}</span></button><button class="filter-button title-4 ${filter === 'unread' ? 'active' : ''}" data-action="filter" data-filter="unread" aria-pressed="${filter === 'unread'}">尚未开始 <span class="filter-count">${books.length - readCount}</span></button></div>
     <div class="book-grid" id="book-grid">${bookResults()}</div></section>
-    <footer class="shelf-footer"><p class="footer-note caption-5">${icon('shield')}书籍保存在服务端 ~/.bqread，阅读进度保存在当前浏览器。</p><div class="footer-links"><button class="footer-link caption-5" data-action="privacy">关于书籍存储</button><button class="footer-link caption-5" data-action="help">使用帮助</button></div></footer>
+    <footer class="shelf-footer"><p class="footer-note caption-5">${icon('shield')}${onIPhone ? '书籍和阅读进度保存在此设备，可离线阅读。' : '书籍保存在服务端 ~/.bqread，阅读进度保存在当前浏览器。'}</p><div class="footer-links"><button class="footer-link caption-5" data-action="privacy">关于书籍存储</button><button class="footer-link caption-5" data-action="help">使用帮助</button></div></footer>
   </main>`;
 }
 
@@ -191,7 +192,7 @@ function readerDrawer(book: BookSummary): string {
     return `<aside class="reader-drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title"><div class="drawer-header"><h2 class="drawer-title" id="drawer-title">目录</h2><button class="icon-button" data-action="close-drawer" aria-label="关闭目录">${icon('close')}</button></div><p class="drawer-subtitle body-3">共 ${book.chapterCount} 章 · 已读 ${progress(book)}%</p><ol class="chapter-list">${reader.chapters.map((chapter, index) => `<li><button class="chapter-link title-4 ${index === reader!.chapterIndex ? 'active' : ''}" data-action="chapter" data-chapter="${index}" ${index === reader!.chapterIndex ? 'aria-current="location"' : ''}><span class="chapter-number">${String(index + 1).padStart(2, '0')}</span><span>${escapeHTML(chapter.title)}</span></button></li>`).join('')}</ol></aside>`;
   }
   if (reader?.drawer === 'settings') {
-    return `<aside class="reader-drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title"><div class="drawer-header"><h2 class="drawer-title" id="drawer-title">阅读设置</h2><button class="icon-button" data-action="close-drawer" aria-label="关闭阅读设置">${icon('close')}</button></div><section class="setting-section"><span class="setting-label title-4">阅读主题</span><div class="theme-options">${(['paper', 'sage', 'night'] as const).map((theme) => `<button class="theme-option caption-4 ${settings.theme === theme ? 'active' : ''}" data-action="theme" data-theme="${theme}" aria-pressed="${settings.theme === theme}"><span class="theme-swatch ${theme}">${icon(theme === 'night' ? 'moon' : 'sun')}</span>${{ paper: '暖纸白', sage: '护眼绿', night: '静谧夜' }[theme]}</button>`).join('')}</div></section><section class="setting-section"><span class="setting-label title-4">正文字号</span>${fontStepper(settings.fontSize)}</section><p class="setting-tip caption-2">设置会自动保存在当前浏览器。阅读时，使用键盘左右方向键也可以切换章节。</p></aside>`;
+    return `<aside class="reader-drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title"><div class="drawer-header"><h2 class="drawer-title" id="drawer-title">阅读设置</h2><button class="icon-button" data-action="close-drawer" aria-label="关闭阅读设置">${icon('close')}</button></div><section class="setting-section"><span class="setting-label title-4">阅读主题</span><div class="theme-options">${(['paper', 'sage', 'night'] as const).map((theme) => `<button class="theme-option caption-4 ${settings.theme === theme ? 'active' : ''}" data-action="theme" data-theme="${theme}" aria-pressed="${settings.theme === theme}"><span class="theme-swatch ${theme}">${icon(theme === 'night' ? 'moon' : 'sun')}</span>${{ paper: '暖纸白', sage: '护眼绿', night: '静谧夜' }[theme]}</button>`).join('')}</div></section><section class="setting-section"><span class="setting-label title-4">正文字号</span>${fontStepper(settings.fontSize)}</section><p class="setting-tip caption-2">${onIPhone ? '设置会自动保存在此设备。' : '设置会自动保存在当前浏览器。'}阅读时，使用键盘左右方向键也可以切换章节。</p></aside>`;
   }
   return '';
 }
@@ -205,7 +206,7 @@ function importFields(): string {
       <strong class="title-3">${importFile ? escapeHTML(importFile.name) : '选择或拖入 TXT 文件'}</strong>
       <span class="caption-5">支持 TXT 格式，最大 10 MB</span>
     </label>
-    <p class="import-note caption-5">${icon('shield')}文件将保存到运行墨读的服务端 ~/.bqread 文件夹</p>` : `
+    <p class="import-note caption-5">${icon('shield')}${onIPhone ? '文件将按章节保存到此设备，可离线阅读。' : '文件将保存到运行墨读的服务端 ~/.bqread 文件夹'}</p>` : `
     <div class="field"><label class="field-label" for="paste-text">小说正文</label>
       <textarea class="text-area body-3" id="paste-text" placeholder="把小说文本粘贴到这里……">${escapeHTML(pasteText)}</textarea></div>`;
   return `${source}
@@ -221,11 +222,11 @@ function modalView(): string {
     return `<div class="modal-backdrop" data-action="backdrop-close"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="modal-header"><div><h2 class="modal-title" id="modal-title">让阅读，简单一点</h2><p class="modal-description body-3">一份简短的墨读使用指南</p></div><button class="icon-button modal-close" data-action="close-modal" aria-label="关闭使用指南">${icon('close')}</button></div><p class="help-intro body-3">墨读是一款私人书库阅读器，无需注册。挑一本喜欢的书，就能开始。</p><ol class="help-steps"><li><div><h3 class="title-3">导入你的小说</h3><p class="body-3">选择 TXT 文件，或直接粘贴文字。支持 UTF-8 与 GB18030 编码，文件不超过 10 MB。</p></div></li><div><h3 class="title-3">找到想读的那一章</h3><p class="body-3">自动识别“第一章”等章节标题。阅读页右上角可以打开目录，随时切换。</p></div><li><div><h3 class="title-3">让页面合你的心意</h3><p class="body-3">选择暖纸白、护眼绿或静谧夜，字号也可以自由调整。</p></div></li></ol><div class="shortcuts caption-5"><span><kbd>←</kbd> 上一章</span><span><kbd>→</kbd> 下一章</span><span><kbd>Esc</kbd> 关闭面板</span></div></section></div>`;
   }
   if (modal === 'privacy') {
-    return `<div class="modal-backdrop" data-action="backdrop-close"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="modal-header"><div><h2 class="modal-title" id="modal-title">你的故事，只属于你</h2><p class="modal-description body-3">关于书籍与阅读数据的保存方式</p></div><button class="icon-button modal-close" data-action="close-modal" aria-label="关闭书籍存储说明">${icon('close')}</button></div><div class="privacy-points"><div class="privacy-point">${icon('shield')}<div><h3 class="title-3">书籍保存在服务端</h3><p class="body-3">TXT 在浏览器内解码后，按章节建立索引，保存在运行墨读的服务端 ~/.bqread/books 文件夹中。</p></div></div><div class="privacy-point">${icon('book')}<div><h3 class="title-3">阅读进度保存在浏览器</h3><p class="body-3">阅读进度与阅读偏好保存在 localStorage，清除浏览器网站数据会删除它们，但服务端书籍不受影响。</p></div></div><div class="privacy-point">${icon('file')}<div><h3 class="title-3">随时管理书籍</h3><p class="body-3">点击封面右上角的导出按钮可下载 UTF-8 TXT，点击移除按钮会删除服务端书籍。</p></div></div></div><button class="primary-button button-sm" data-action="close-modal">我知道了</button></section></div>`;
+    return `<div class="modal-backdrop" data-action="backdrop-close"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="modal-header"><div><h2 class="modal-title" id="modal-title">你的故事，只属于你</h2><p class="modal-description body-3">关于书籍与阅读数据的保存方式</p></div><button class="icon-button modal-close" data-action="close-modal" aria-label="关闭书籍存储说明">${icon('close')}</button></div><div class="privacy-points"><div class="privacy-point">${icon('shield')}<div><h3 class="title-3">${onIPhone ? '书籍保存在此设备' : '书籍保存在服务端'}</h3><p class="body-3">${onIPhone ? '导入的 TXT 在此设备解码、分章并写入本机书库。' : 'TXT 在浏览器内解码后，按章节建立索引，保存在运行墨读的服务端 ~/.bqread/books 文件夹中。'}</p></div></div><div class="privacy-point">${icon('book')}<div><h3 class="title-3">${onIPhone ? '阅读进度与对话' : '阅读进度保存在浏览器'}</h3><p class="body-3">${onIPhone ? '阅读进度和对话历史保存在此设备。使用 AI 时，问题、相关对话和查阅的原文将发送给你选择的模型提供商。' : '阅读进度与阅读偏好保存在 localStorage，清除浏览器网站数据会删除它们，但服务端书籍不受影响。'}</p></div></div><div class="privacy-point">${icon('file')}<div><h3 class="title-3">随时管理书籍</h3><p class="body-3">${onIPhone ? '点击封面的导出按钮可将 TXT 保存到「文件」或分享。移除书籍会同时删除本机的正文和对话。' : '点击封面右上角的导出按钮可下载 UTF-8 TXT，点击移除按钮会删除服务端书籍。'}</p></div></div></div><button class="primary-button button-sm" data-action="close-modal">我知道了</button></section></div>`;
   }
   if (modal === 'delete') {
     const book = books.find((item) => item.id === deleteId);
-    return `<div class="modal-backdrop" data-action="backdrop-close"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="modal-header"><h2 class="modal-title" id="modal-title">从书架移除这本书？</h2><button class="icon-button modal-close" data-action="close-modal" aria-label="取消移除">${icon('close')}</button></div><p class="delete-warning body-3">《${escapeHTML(book?.title ?? '')}》的正文将从服务端删除，当前浏览器的阅读进度也会移除，原始 TXT 文件不会受到影响。</p><div class="modal-actions"><button class="secondary-button button-sm" data-action="close-modal">保留书籍</button><button class="primary-button button-sm" data-action="confirm-delete">确认移除</button></div></section></div>`;
+    return `<div class="modal-backdrop" data-action="backdrop-close"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="modal-header"><h2 class="modal-title" id="modal-title">从书架移除这本书？</h2><button class="icon-button modal-close" data-action="close-modal" aria-label="取消移除">${icon('close')}</button></div><p class="delete-warning body-3">《${escapeHTML(book?.title ?? '')}》${onIPhone ? '的阅读记录和对话将从本机移除。已导入的正文也会删除，原始 TXT 文件不受影响。' : '的正文将从服务端删除，当前浏览器的阅读进度也会移除，原始 TXT 文件不会受到影响。'}</p><div class="modal-actions"><button class="secondary-button button-sm" data-action="close-modal">保留书籍</button><button class="primary-button button-sm" data-action="confirm-delete">确认移除</button></div></section></div>`;
   }
   return `<div class="modal-backdrop" data-action="backdrop-close"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="modal-header"><div><h2 class="modal-title" id="modal-title">带一个新故事来</h2><p class="modal-description body-3">本地导入，自在阅读</p></div><button class="icon-button modal-close" data-action="close-modal" aria-label="关闭导入窗口">${icon('close')}</button></div>${importTabs(importTab)}
   <div id="import-panel" role="tabpanel" aria-labelledby="import-tab-${importTab}">${importFields()}</div>
@@ -327,7 +328,7 @@ function saveSettings(): void {
   try {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   } catch {
-    showToast('浏览器未允许保存阅读偏好，本次设置仍然有效。');
+    showToast('阅读偏好保存失败，本次设置仍然有效。');
   }
 }
 
@@ -623,10 +624,10 @@ app.addEventListener('click', (event) => {
         books = books.filter((book) => book.id !== id);
         modal = null;
         render();
-        showToast('书籍已从服务端书架移除。');
+        showToast('书籍已从书架移除。');
       }).catch(() => {
         button.removeAttribute('disabled');
-        showToast('移除失败，请检查浏览器存储权限后重试。');
+        showToast('移除失败，请重试。');
       });
     }
   } else if (action === 'filter') {
@@ -843,13 +844,15 @@ window.addEventListener('keydown', (event) => {
 });
 
 async function init(): Promise<void> {
+  let hiddenSamples: string[] = [];
   try {
     books = await getBooks();
+    if (onIPhone) hiddenSamples = await (await (await import('./mobile/device')).library()).hiddenSamples();
   } catch (error) {
-    showToast(error instanceof Error ? error.message : '服务端书库暂不可用，试读仍可正常进行。');
+    showToast(error instanceof Error ? error.message : '书库暂不可用，试读仍可正常进行。');
   }
   const existingSamples = new Set(books.filter((book) => book.sample).map((book) => book.id));
-  const sampleSummaries = samples.filter((book) => !existingSamples.has(book.id)).map(({ chapters, content, ...book }) => ({
+  const sampleSummaries = samples.filter((book) => !existingSamples.has(book.id) && !hiddenSamples.includes(book.id)).map(({ chapters, content, ...book }) => ({
     ...book, chapterCount: chapters.length, contentLength: content.length,
   }));
   books = restoreReadingProgress([...books, ...sampleSummaries]);

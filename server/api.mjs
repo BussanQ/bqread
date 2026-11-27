@@ -70,7 +70,9 @@ export function createApiHandler(options = {}) {
   const directory = resolveBookDirectory(options.directory);
   const store = createBookStore(directory);
   const providers = createProviders(directory, options.ai);
-  const history = createBookHistory(directory, createBookChat(store, { getConfig: providers.current }));
+  const defaults = { baseURL: process.env.BQREAD_AI_BASE_URL ?? 'https://api.openai.com/v1',
+    model: process.env.BQREAD_AI_MODEL, apiKey: process.env.BQREAD_AI_API_KEY };
+  const history = createBookHistory(directory, createBookChat(store, { defaults, getConfig: providers.current }));
   return async function apiHandler(request, response, next) {
     const url = new URL(request.url ?? '/', 'http://localhost');
     if (url.pathname !== '/api/providers' && !url.pathname.startsWith('/api/books')) {
